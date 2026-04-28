@@ -1,0 +1,706 @@
+<!-- ══════════════════════════════════════════════════════════
+     ASTRON FRESHSTOP — Operations Hub V18
+     index.html — Body content only (no <html>, <head>, <body> tags)
+     
+     CODEPEN SETUP:
+     - Paste this into the HTML panel
+     - Do NOT wrap in <html> or <body> tags — CodePen adds those
+     
+     STRUCTURE:
+     ├── Sidebar .............. Navigation for Home, 4 stores, Ops Hub
+     ├── Topbar ............... Title bar with date
+     ├── Home View ............ Notice board + quick access cards
+     ├── Store Views .......... Per-store ops tiles + sub-pages
+     ├── Ops Team Hub ......... Notice Board, Assessment Dashboard,
+     │                          Training Docs, Team Controls
+     ├── CSA Form Modal ....... Assessment form (injected by JS)
+     ├── CSA Remediation Modal  Remediation form (injected by JS)
+     ├── CSA Report Modal ..... Assessment report viewer
+     ├── F.Planner Modal ...... Fuel planner (Hillcrest)
+     └── P.Planner Modal ...... Payment planner (Hillcrest)
+     ══════════════════════════════════════════════════════════ -->
+
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-title">
+            <i class="fas fa-gas-pump"></i>
+            ASTRON FRESHSTOP
+        </div>
+        <div class="brand-sub">Operations Hub</div>
+    </div>
+    <div class="sidebar-status">
+        <span class="status-dot"></span>
+        <span>Operational</span>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-section-label">Main</div>
+        <div class="nav-item active" onclick="showView('home')" id="nav-home">
+            <i class="fas fa-home"></i> Home
+        </div>
+
+        <div class="nav-section-label">Stores</div>
+        <div class="nav-item store-item" onclick="showStoreView('hillcrest')" id="nav-hillcrest">
+            <i class="fas fa-store"></i> Hillcrest
+        </div>
+        <div class="nav-item store-item" onclick="showStoreView('hammersdale')" id="nav-hammersdale">
+            <i class="fas fa-store-alt"></i> Hammersdale
+        </div>
+        <div class="nav-item store-item" onclick="showStoreView('gillits')" id="nav-gillits">
+            <i class="fas fa-store"></i> Gillits
+        </div>
+        <div class="nav-item store-item" onclick="showStoreView('catoridge')" id="nav-catoridge">
+            <i class="fas fa-store-alt"></i> Cato Ridge
+        </div>
+
+        <div class="nav-section-label">Management</div>
+        <div class="nav-item" onclick="showView('owner')" id="nav-owner">
+            <i class="fas fa-users-cog"></i> Operations Team Hub
+        </div>
+    </nav>
+</aside>
+
+<!-- NOTICE DETAIL MODAL -->
+<div class="nd-bd" id="nd-bd">
+  <div class="nd-box">
+    <div class="nd-bar">
+      <span><i class="fas fa-bullhorn"></i> Notice Detail</span>
+      <div style="display:flex;gap:.5rem">
+        <button onclick="printNotice()" style="background:rgba(255,255,255,.1);border:none;color:#fff;padding:.35rem .75rem;border-radius:6px;cursor:pointer;font-size:.775rem;font-weight:600;display:flex;align-items:center;gap:.3rem"><i class="fas fa-print"></i> Print</button>
+        <button onclick="closeNoticeDetail()" class="mcls"><i class="fas fa-times"></i></button>
+      </div>
+    </div>
+    <div class="nd-body" id="nd-body"></div>
+  </div>
+</div>
+
+<!-- FUEL PLANNER MODAL -->
+<div class="fp-modal-backdrop" id="fp-modal-backdrop">
+    <div class="fp-modal">
+        <div class="fp-modal-bar">
+            <span><i class="fas fa-gas-pump"></i> F.Planner V1 — Hillcrest</span>
+            <button class="fp-close" onclick="closeFuelPlanner()" title="Close"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="fp-modal-body" id="fp-modal-body">
+            <!-- Fuel planner injected here -->
+        </div>
+    </div>
+</div>
+
+<!-- PAYMENT PLAN MODAL -->
+<div class="fp-modal-backdrop" id="pp-modal-backdrop">
+    <div class="fp-modal">
+        <div class="fp-modal-bar">
+            <span><i class="fas fa-file-invoice-dollar"></i> P.Planner V1 — Hillcrest</span>
+            <button class="fp-close" onclick="closePaymentPlanner()" title="Close"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="fp-modal-body" id="pp-modal-body">
+            <!-- Payment planner injected here -->
+        </div>
+    </div>
+</div>
+
+<!-- CSA FORM MODAL -->
+<div class="csa-bd" id="csa-form-modal-bd">
+    <div class="csa-box">
+        <div class="csa-bar">
+            <span><i class="fas fa-clipboard-check"></i> CSA Assessment</span>
+            <button onclick="closeCSAForm()" class="mcls"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="csa-body" id="csa-form-body">
+            <!-- CSA form injected here -->
+        </div>
+    </div>
+</div>
+
+<!-- CSA REMEDIATION MODAL -->
+<div class="csar-bd" id="csa-remed-modal-bd">
+    <div class="csar-box">
+        <div class="csar-bar">
+            <span><i class="fas fa-first-aid"></i> CSA Remediation</span>
+            <button onclick="closeCSARemed()" class="mcls"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="csar-body" id="csa-remed-body">
+            <!-- Remediation form injected here -->
+        </div>
+    </div>
+</div>
+
+<!-- CSA REPORT MODAL -->
+<div class="rbd" id="csa-report-bd">
+    <div class="rbox">
+        <div class="rbar">
+            <span><i class="fas fa-file-alt"></i> Assessment Report</span>
+            <div style="display:flex;gap:.5rem">
+                <button onclick="csaPrint()" style="background:rgba(255,255,255,.1);border:none;color:#fff;padding:.35rem .75rem;border-radius:6px;cursor:pointer;font-size:.775rem;font-weight:600;display:flex;align-items:center;gap:.3rem"><i class="fas fa-print"></i> Print</button>
+                <button onclick="csaCloseReport()" class="mcls"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="rbody" id="csa-report-body"></div>
+    </div>
+</div>
+
+<!-- DAILY CHECKLIST FORM MODAL -->
+<div class="csa-bd" id="dc-form-modal-bd">
+    <div class="csa-box" style="max-width:1000px">
+        <div class="csa-bar">
+            <span><i class="fas fa-tasks"></i> Daily Site Supervisor Checklist</span>
+            <button onclick="closeDC()" class="mcls"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="dc-form-body"></div>
+    </div>
+</div>
+
+<!-- DAILY CHECKLIST VIEW MODAL -->
+<div class="rbd" id="dc-view-bd">
+    <div class="rbox" style="max-width:760px">
+        <div class="rbar">
+            <span><i class="fas fa-file-alt"></i> Daily Checklist Record</span>
+            <div style="display:flex;gap:.5rem">
+                <button onclick="dcPrintRecord()" style="background:rgba(255,255,255,.1);border:none;color:#fff;padding:.35rem .75rem;border-radius:6px;cursor:pointer;font-size:.775rem;font-weight:600;display:flex;align-items:center;gap:.3rem"><i class="fas fa-print"></i> Print</button>
+                <button onclick="closeDCView()" class="mcls"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="rbody" id="dc-view-body"></div>
+    </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+    <header class="topbar">
+        <span class="topbar-title" id="topbar-title">Manager's Notice Board</span>
+        <span class="topbar-meta" id="topbar-date"></span>
+    </header>
+
+    <div class="content-area">
+
+        <!-- ═══ HOME VIEW ═══ -->
+        <div class="view active" id="view-home">
+
+            <!-- Notice Board -->
+            <div class="notice-board">
+                <div class="notice-board-header">
+                    <h2><i class="fas fa-bullhorn"></i> Manager's Notice Board</h2>
+                </div>
+
+                <span class="notice-tag">Announcements</span>
+
+                <div id="notice-list">
+                    <!-- notices rendered by JS -->
+                </div>
+            </div>
+
+            <!-- Quick Access -->
+            <div class="section-header">
+                <span class="section-title">Quick Access</span>
+            </div>
+            <div class="card-grid">
+                <div class="action-card" onclick="openTemplateVault()">
+                    <div class="card-icon"><i class="fas fa-folder-open"></i></div>
+                    <h4>Template Vault</h4>
+                    <p>Access document templates and forms for daily operations.</p>
+                </div>
+                <div class="action-card" onclick="openIncidentReporting()">
+                    <div class="card-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <h4>Incident Reporting</h4>
+                    <p>Safety and incident management system.</p>
+                </div>
+                <div class="action-card" onclick="openConferenceCalls()">
+                    <div class="card-icon"><i class="fas fa-phone"></i></div>
+                    <h4>Conference Calls</h4>
+                    <p>Conference call notes and documentation vault.</p>
+                </div>
+                <div class="action-card" onclick="openEmail()">
+                    <div class="card-icon"><i class="fas fa-envelope"></i></div>
+                    <h4>Email</h4>
+                    <p>Open your inbox and manage communications.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ STORE OPERATIONS VIEW ═══ -->
+        <div class="view" id="view-store">
+            <div class="sub-page-header">
+                <div class="sub-page-title">
+                    <i class="fas fa-gas-pump"></i>
+                    <span id="store-view-title">Store Operations</span>
+                </div>
+                <button class="btn-back" onclick="showView('home')">
+                    <i class="fas fa-arrow-left"></i> Back
+                </button>
+            </div>
+            <!-- Sub pages -->
+            <div id="ops-main">
+                <div class="ops-grid" id="ops-grid"></div>
+            </div>
+
+            <div class="hidden" id="sub-repairs">
+                <div class="sub-page-header">
+                    <div class="sub-page-title"><i class="fas fa-wrench"></i> Repairs & Maintenance</div>
+                    <button class="btn-back" onclick="showOpsMain()"><i class="fas fa-arrow-left"></i> Back</button>
+                </div>
+                <div class="link-cards">
+                    <div class="link-card">
+                        <h4>Repairs & Maintenance Log</h4>
+                        <p>Track and manage all maintenance activities and service records.</p>
+                        <a class="link-btn" href="https://docs.google.com/spreadsheets/d/12WC_ex1pXH_JWInspuAWtUEAAa-dIiKQA8aTxKdstMM/edit?usp=drivesdk" target="_blank">Open Log</a>
+                    </div>
+                    <div class="link-card">
+                        <h4>Preferred Contractors</h4>
+                        <p>Contact information for approved contractors and service providers.</p>
+                        <a class="link-btn" href="https://onedrive.live.com/personal/b85cebe941b27ea9/_layouts/15/Doc.aspx?sourcedoc=%7BCC264310-6C3A-4F4E-9208-7F43C10E91C3%7D&file=VENDORS.xlsx&action=default&mobileredirect=true" target="_blank">View Contractors</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hidden" id="sub-team">
+                <div class="sub-page-header">
+                    <div class="sub-page-title"><i class="fas fa-users"></i> Team Management</div>
+                    <button class="btn-back" onclick="showOpsMain()"><i class="fas fa-arrow-left"></i> Back</button>
+                </div>
+                <div class="link-cards">
+                    <div class="link-card">
+                        <h4>Team Documents</h4>
+                        <p>Access team-related documents and personnel files.</p>
+                        <button class="link-btn" onclick="openTeamDocuments()">Open Documents</button>
+                    </div>
+                    <div class="link-card">
+                        <h4>Team Register</h4>
+                        <p>Staff information and contact details registry.</p>
+                        <button class="link-btn" onclick="openTeamRegister()">View Register</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hidden" id="sub-fuel">
+                <div class="sub-page-header">
+                    <div class="sub-page-title"><i class="fas fa-gas-pump"></i> Fuel Management</div>
+                    <button class="btn-back" onclick="showOpsMain()"><i class="fas fa-arrow-left"></i> Back</button>
+                </div>
+                <div class="link-cards">
+                    <div class="link-card">
+                        <h4>Fuel Plan</h4>
+                        <p>View and manage fuel planning documents and forecasts.</p>
+                        <button class="link-btn" onclick="openFuelPlan()">Open Fuel Plan</button>
+                    </div>
+                    <div class="link-card">
+                        <h4>Wet Stocks</h4>
+                        <p>Daily fuel inventory tracking and reconciliation.</p>
+                        <button class="link-btn" onclick="openWetStocks()">Open Wet Stocks</button>
+                    </div>
+                    <div class="link-card">
+                        <h4>Pumps & Namos</h4>
+                        <p>Pump management and monitoring systems.</p>
+                        <button class="link-btn" onclick="openPumpsNamos()">Open Pumps & Namos</button>
+                    </div>
+                    <div class="link-card">
+                        <h4>Wet Stocks Live</h4>
+                        <p>Live fuel inventory management system.</p>
+                        <button class="link-btn" onclick="openWetStocksLive()">Open Live</button>
+                    </div>
+                    <div class="link-card">
+                        <h4>Astron Fuel Orders</h4>
+                        <p>Fuel ordering and procurement system.</p>
+                        <button class="link-btn" onclick="openAstronFuelOrders()">Open Orders</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hidden" id="sub-financial">
+                <div class="sub-page-header">
+                    <div class="sub-page-title"><i class="fas fa-calculator"></i> Admin Controls Sheet</div>
+                    <button class="btn-back" onclick="showOpsMain()"><i class="fas fa-arrow-left"></i> Back</button>
+                </div>
+                <div class="fin-grid">
+                    <div class="fin-tile" onclick="openAccountPayments()">Account Payments</div>
+                    <div class="fin-tile" onclick="openGlocellInvoices()">Glocell Invoices</div>
+                    <div class="fin-tile" onclick="openCreditsOwing()">Credits Owing</div>
+                    <div class="fin-tile" onclick="openSupplierStatement()">Supplier Statement</div>
+                    <div class="fin-tile" onclick="openPaymentPlan()">Payment Plan</div>
+                    <div class="fin-tile" onclick="openDeductions()">Deductions</div>
+                    <div class="fin-tile" onclick="openBankingRecon()">Banking Recon</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ OPERATIONS TEAM HUB VIEW ═══ -->
+        <div class="view" id="view-owner">
+            <div class="section-header" style="margin-bottom:0;">
+                <span class="section-title">Operations Team Hub</span>
+            </div>
+
+            <!-- ═══ OPS HUB TAB BAR ═══ -->
+            <div class="ops-tabs">
+                <button class="ops-tab-btn active" id="opstab-btn-notices" onclick="showOpsTab('notices')"><i class="fas fa-bullhorn"></i> Notice Board</button>
+                <button class="ops-tab-btn" id="opstab-btn-assessments" onclick="showOpsTab('assessments')"><i class="fas fa-clipboard-check"></i> Assessments <span class="ops-tab-badge" id="ops-assess-badge" style="display:none"></span></button>
+                <button class="ops-tab-btn" id="opstab-btn-dailychecklist" onclick="showOpsTab('dailychecklist')"><i class="fas fa-tasks"></i> Daily Checklist <span class="ops-tab-badge" id="ops-dc-badge" style="display:none"></span></button>
+                <button class="ops-tab-btn" id="opstab-btn-training" onclick="showOpsTab('training')"><i class="fas fa-book-open"></i> Training Docs</button>
+                <button class="ops-tab-btn" id="opstab-btn-teamcontrols" onclick="showOpsTab('teamcontrols')"><i class="fas fa-cogs"></i> Team Controls</button>
+            </div>
+
+            <!-- ═══ SECTION: Notice Board ═══ -->
+            <div id="ops-sec-notices" class="ops-section">
+            <div class="owner-section">
+                <h3><i class="fas fa-bullhorn"></i> Notice Board Management</h3>
+                <div class="notice-board" style="margin-bottom:0;">
+                    <div class="notice-board-header">
+                        <h2><i class="fas fa-bullhorn"></i> Manager's Notice Board</h2>
+                        <button class="notice-add-btn" onclick="toggleNoticeForm()">
+                            <i class="fas fa-plus"></i> Post Notice
+                        </button>
+                    </div>
+                    <span class="notice-tag">Announcements</span>
+                    <div id="notice-list-team">
+                        <!-- mirrored notices rendered by JS -->
+                    </div>
+                    <!-- Enhanced notice posting form -->
+                    <div class="nf-enhanced hidden" id="nf-wrap">
+                      <div class="nf-row">
+                        <div class="nf-field"><div class="nf-label">Notice Title *</div><input class="nf-input" type="text" id="f-title" placeholder="e.g. Monthly Stock Take Reminder"></div>
+                        <div class="nf-field" style="max-width:140px"><div class="nf-label">Priority</div><select class="nf-input" id="f-priority"><option value="Normal">Normal</option><option value="High">High</option><option value="Low">Low</option></select></div>
+                      </div>
+                      <div class="nf-row">
+                        <div class="nf-field full"><div class="nf-label">Notice Details *</div><textarea class="nf-input" id="f-body" placeholder="Full announcement text…" style="min-height:80px;resize:vertical"></textarea></div>
+                      </div>
+                      <div class="nf-row">
+                        <div class="nf-field" style="max-width:220px"><div class="nf-label">Posted By</div><input class="nf-input" type="text" id="f-author" placeholder="Your name"></div>
+                      </div>
+                      <div style="margin-bottom:.75rem">
+                        <div class="nf-label" style="margin-bottom:.5rem">Attach Documents (optional)</div>
+                        <div id="doc-list"></div>
+                        <button class="btn-add-doc" onclick="addDocRow()"><i class="fas fa-plus"></i> Add document link</button>
+                      </div>
+                      <div style="display:flex;gap:.5rem">
+                        <button class="btn-post" onclick="postNotice()">Post Notice</button>
+                        <button class="btn-cancel" onclick="toggleNoticeForm()">Cancel</button>
+                      </div>
+                    </div>
+                </div>
+            </div>
+            </div><!-- /ops-sec-notices -->
+
+            <!-- ═══ SECTION: Assessment Dashboard ═══ -->
+            <div id="ops-sec-assessments" class="ops-section" style="display:none">
+            <!-- Assessment Dashboard -->
+            <div class="owner-section">
+                <h3><i class="fas fa-clipboard-check"></i> Assessment Dashboard</h3>
+
+                <!-- Tab Bar -->
+                <div class="csa-tabs">
+                    <button class="csa-tab-btn active" id="csatab-btn-dashboard" onclick="csaShowTab('dashboard')"><i class="fas fa-chart-pie"></i> Dashboard</button>
+                    <button class="csa-tab-btn" id="csatab-btn-roster" onclick="csaShowTab('roster')"><i class="fas fa-users"></i> Staff Roster <span class="tab-badge ok" id="roster-badge">0</span></button>
+                    <button class="csa-tab-btn" id="csatab-btn-frequency" onclick="csaShowTab('frequency')"><i class="fas fa-calendar-check"></i> Frequency <span class="tab-badge ok" id="freq-badge">0</span></button>
+                    <button class="csa-tab-btn" id="csatab-btn-remediations" onclick="csaShowTab('remediations')"><i class="fas fa-first-aid"></i> Remediations <span class="tab-badge ok" id="remed-badge">0</span></button>
+                </div>
+
+                <!-- ═══ TAB: Dashboard ═══ -->
+                <div class="csa-tab-panel active" id="csatab-dashboard">
+                    <!-- WhatsApp Sender Panel -->
+                    <div style="background:#f8fafc;border:1px solid var(--bdr);border-radius:10px;padding:1.25rem;margin-bottom:1.25rem">
+                        <div style="font-size:.8rem;font-weight:700;color:var(--t1);margin-bottom:.75rem;display:flex;align-items:center;gap:.4rem"><i class="fab fa-whatsapp" style="color:#25d366;font-size:1rem"></i> Send Assessment Link via WhatsApp</div>
+                        <div style="display:flex;gap:.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem">
+                            <div style="flex:1;min-width:160px">
+                                <label style="display:block;font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.35rem">Select Site</label>
+                                <select id="wa-site" style="width:100%;border:1px solid var(--bdr);border-radius:7px;padding:.5rem .75rem;font-size:.85rem;font-family:inherit;color:var(--t1);background:#fff;outline:none">
+                                    <option value="Hillcrest">Hillcrest</option>
+                                    <option value="Hammersdale">Hammersdale</option>
+                                    <option value="Gillits">Gillits</option>
+                                    <option value="Cato Ridge">Cato Ridge</option>
+                                </select>
+                            </div>
+                            <div style="flex:1;min-width:180px">
+                                <label style="display:block;font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.35rem">Assessment Type</label>
+                                <select id="wa-type" style="width:100%;border:1px solid var(--bdr);border-radius:7px;padding:.5rem .75rem;font-size:.85rem;font-family:inherit;color:var(--t1);background:#fff;outline:none">
+                                    <option value="csa_forecourt">CSA Forecourt Service</option>
+                                    <option value="store_promotions">Store & Promotions</option>
+                                    <option value="driveway_appearance">Driveway Appearance</option>
+                                </select>
+                            </div>
+                            <button class="wa-btn" onclick="sendCSAWhatsApp()"><i class="fab fa-whatsapp"></i> Send to Site Group</button>
+                        </div>
+                        <div id="wa-preview" style="background:#fff;border:1px solid var(--bdr);border-radius:8px;padding:.875rem;font-size:.8rem;color:var(--t2);line-height:1.5;display:none"></div>
+                        <div id="wa-url-note" style="margin-top:.75rem;font-size:.7rem;display:flex;align-items:center;gap:.3rem"></div>
+                        <div style="margin-top:1rem;font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">Or open form directly on this device</div>
+                        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+                            <button class="wa-open-btn" onclick="openCSAForm('Hillcrest')"><i class="fas fa-store"></i> Hillcrest</button>
+                            <button class="wa-open-btn" onclick="openCSAForm('Hammersdale')"><i class="fas fa-store"></i> Hammersdale</button>
+                            <button class="wa-open-btn" onclick="openCSAForm('Gillits')"><i class="fas fa-store"></i> Gillits</button>
+                            <button class="wa-open-btn" onclick="openCSAForm('Cato Ridge')"><i class="fas fa-store"></i> Cato Ridge</button>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard -->
+                    <div class="csa-dash-section">
+                        <div class="csa-filter-bar">
+                            <div>
+                                <label style="display:block;font-size:.65rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem">Assessment Type</label>
+                                <select id="csa-f-type" onchange="csaRender()">
+                                    <option value="">All types</option>
+                                    <option value="csa_forecourt">CSA Forecourt Service</option>
+                                    <option value="store_promotions">Store & Promotions</option>
+                                    <option value="driveway_appearance">Driveway Appearance</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:.65rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem">Store</label>
+                                <select id="csa-f-store" onchange="csaRender()">
+                                    <option value="">All stores</option>
+                                    <option value="Hillcrest">Hillcrest</option>
+                                    <option value="Hammersdale">Hammersdale</option>
+                                    <option value="Gillits">Gillits</option>
+                                    <option value="Cato Ridge">Cato Ridge</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:.65rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem">Period</label>
+                                <select id="csa-f-period" onchange="csaRender()">
+                                    <option value="all">All time</option>
+                                    <option value="7">Last 7 days</option>
+                                    <option value="30" selected>Last 30 days</option>
+                                    <option value="90">Last 90 days</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:.65rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.3rem">Search Name</label>
+                                <input id="csa-f-search" placeholder="Name…" oninput="csaRender()" style="min-width:140px">
+                            </div>
+                            <div style="margin-left:auto;display:flex;gap:.5rem;align-items:flex-end">
+                                <button onclick="csaLoadDemo()" style="background:#f8fafc;border:1px solid var(--bdr);padding:.45rem .75rem;border-radius:6px;font-size:.75rem;font-weight:600;color:var(--t2);cursor:pointer">Load Demo</button>
+                                <button onclick="csaClearData()" style="background:#fff;border:1px solid #fca5a5;padding:.45rem .75rem;border-radius:6px;font-size:.75rem;font-weight:600;color:#dc2626;cursor:pointer">Clear Data</button>
+                            </div>
+                        </div>
+
+                        <div id="csa-kpi" class="csa-kpi-row"></div>
+
+                        <div class="csa-charts-row">
+                            <div class="csa-chart-card">
+                                <h4>Pass / Fail Ratio</h4>
+                                <div class="csa-chart-wrap"><canvas id="csa-donut"></canvas></div>
+                            </div>
+                            <div class="csa-chart-card">
+                                <h4>Average Score by Store</h4>
+                                <div class="csa-chart-wrap"><canvas id="csa-bar"></canvas></div>
+                            </div>
+                        </div>
+
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+                            <span style="font-size:.8rem;font-weight:600;color:var(--t1)">Assessment Records</span>
+                            <span id="csa-count" style="font-size:.75rem;color:var(--t3)">0 records</span>
+                        </div>
+                        <div class="csa-tbl-wrap">
+                            <table class="csa-tbl">
+                                <thead><tr><th>Name</th><th>Type</th><th>Store</th><th>Date</th><th>Score</th><th>Result</th><th>Status</th><th>Assessor</th><th>Actions</th></tr></thead>
+                                <tbody id="csa-tbody"></tbody>
+                            </table>
+                            <div id="csa-empty" style="padding:2rem;text-align:center;color:var(--t3);font-size:.85rem;display:none">No assessment records found. Use the form above to submit assessments or load demo data.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ TAB: Staff Roster ═══ -->
+                <div class="csa-tab-panel" id="csatab-roster">
+                    <div class="roster-add-bar">
+                        <div style="flex:1;min-width:180px">
+                            <label style="display:block;font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.35rem">Name *</label>
+                            <input id="roster-name" class="nf-input" placeholder="e.g. Thabo Mokoena">
+                        </div>
+                        <div style="min-width:150px">
+                            <label style="display:block;font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.35rem">Store *</label>
+                            <select id="roster-store" class="nf-input">
+                                <option value="Hillcrest">Hillcrest</option>
+                                <option value="Hammersdale">Hammersdale</option>
+                                <option value="Gillits">Gillits</option>
+                                <option value="Cato Ridge">Cato Ridge</option>
+                            </select>
+                        </div>
+                        <div style="min-width:150px">
+                            <label style="display:block;font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.35rem">Category *</label>
+                            <select id="roster-category" class="nf-input" onchange="rosterCategoryChange()">
+                                <option value="csa">CSA</option>
+                                <option value="management">Management</option>
+                                <option value="cashier">Cashier</option>
+                                <option value="kitchen">Kitchen</option>
+                                <option value="coffee">Coffee</option>
+                                <option value="merchandising">Merchandising</option>
+                            </select>
+                        </div>
+                        <div id="roster-supervisor-wrap" style="display:flex;align-items:center;gap:.35rem;padding:0 .25rem">
+                            <input type="checkbox" id="roster-supervisor" style="width:16px;height:16px;cursor:pointer;accent-color:var(--acc)">
+                            <label for="roster-supervisor" style="font-size:.8rem;font-weight:600;color:var(--t1);cursor:pointer;user-select:none;white-space:nowrap">Supervisor</label>
+                        </div>
+                        <button class="csa-btn pri" onclick="rosterAdd()" style="white-space:nowrap"><i class="fas fa-plus"></i> Add Staff</button>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+                        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                            <label style="font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em">Filter by store</label>
+                            <select id="roster-f-store" onchange="rosterRender()" style="border:1px solid var(--bdr);border-radius:7px;padding:.4rem .65rem;font-size:.8rem;font-family:inherit;color:var(--t1);background:#fff;outline:none">
+                                <option value="Hillcrest" selected>Hillcrest</option>
+                                <option value="Hammersdale">Hammersdale</option>
+                                <option value="Gillits">Gillits</option>
+                                <option value="Cato Ridge">Cato Ridge</option>
+                            </select>
+                            <select id="roster-f-category" onchange="rosterRender()" style="border:1px solid var(--bdr);border-radius:7px;padding:.4rem .65rem;font-size:.8rem;font-family:inherit;color:var(--t1);background:#fff;outline:none">
+                                <option value="">All categories</option>
+                                <option value="management">Management</option>
+                                <option value="csa">CSA</option>
+                                <option value="cashier">Cashier</option>
+                                <option value="kitchen">Kitchen</option>
+                                <option value="coffee">Coffee</option>
+                                <option value="merchandising">Merchandising</option>
+                            </select>
+                        </div>
+                        <span id="roster-count" style="font-size:.75rem;color:var(--t3)"></span>
+                    </div>
+                    <div id="roster-list"></div>
+                    <div id="roster-empty" style="padding:2rem;text-align:center;color:var(--t3);font-size:.85rem;display:none">No staff in the roster. Add team members above to start tracking assessments.</div>
+                </div>
+
+                <!-- ═══ TAB: Frequency Tracker ═══ -->
+                <div class="csa-tab-panel" id="csatab-frequency">
+                    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
+                        <label style="font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em">Assessment Type</label>
+                        <select id="freq-f-type" onchange="freqRender()" style="border:1px solid var(--bdr);border-radius:7px;padding:.4rem .65rem;font-size:.8rem;font-family:inherit;color:var(--t1);background:#fff;outline:none">
+                            <option value="csa_forecourt" selected>CSA Forecourt Service</option>
+                            <option value="store_promotions">Store & Promotions</option>
+                            <option value="driveway_appearance">Driveway Appearance</option>
+                        </select>
+                        <label style="font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em">Store</label>
+                        <select id="freq-f-store" onchange="freqRender()" style="border:1px solid var(--bdr);border-radius:7px;padding:.4rem .65rem;font-size:.8rem;font-family:inherit;color:var(--t1);background:#fff;outline:none">
+                            <option value="">All stores</option>
+                            <option value="Hillcrest" selected>Hillcrest</option>
+                            <option value="Hammersdale">Hammersdale</option>
+                            <option value="Gillits">Gillits</option>
+                            <option value="Cato Ridge">Cato Ridge</option>
+                        </select>
+                    </div>
+                    <div id="freq-cfg-info" style="background:#f8fafc;border:1px solid var(--bdr);border-radius:8px;padding:.6rem .85rem;margin-bottom:1rem;font-size:.75rem;color:var(--t2);display:flex;align-items:center;gap:.5rem;flex-wrap:wrap"></div>
+                    <div id="freq-kpi" class="freq-kpi-row"></div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+                        <span style="font-size:.8rem;font-weight:600;color:var(--t1)">Assessment Status</span>
+                        <span id="freq-count" style="font-size:.75rem;color:var(--t3)"></span>
+                    </div>
+                    <div class="csa-tbl-wrap">
+                        <table class="csa-tbl">
+                            <thead><tr><th>Name</th><th>Store</th><th>Last Assessed</th><th>Days Since</th><th>Status</th><th>Last Score</th><th>Action</th></tr></thead>
+                            <tbody id="freq-tbody"></tbody>
+                        </table>
+                        <div id="freq-empty" style="padding:2rem;text-align:center;color:var(--t3);font-size:.85rem;display:none"></div>
+                    </div>
+                </div>
+
+                <!-- ═══ TAB: Remediations ═══ -->
+                <div class="csa-tab-panel" id="csatab-remediations">
+                    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+                        <label style="font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em">Filter by store</label>
+                        <select id="remed-f-store" onchange="remedRender()" style="border:1px solid var(--bdr);border-radius:7px;padding:.4rem .65rem;font-size:.8rem;font-family:inherit;color:var(--t1);background:#fff;outline:none">
+                            <option value="Hillcrest" selected>Hillcrest</option>
+                            <option value="Hammersdale">Hammersdale</option>
+                            <option value="Gillits">Gillits</option>
+                            <option value="Cato Ridge">Cato Ridge</option>
+                        </select>
+                    </div>
+                    <div id="remed-kpi" class="freq-kpi-row"></div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+                        <span style="font-size:.8rem;font-weight:600;color:var(--t1)">Outstanding Remediations</span>
+                        <span id="remed-count" style="font-size:.75rem;color:var(--t3)"></span>
+                    </div>
+                    <div class="csa-tbl-wrap">
+                        <table class="csa-tbl">
+                            <thead><tr><th>Name</th><th>Type</th><th>Store</th><th>Assessment Date</th><th>Score</th><th>No Count</th><th>Assessor</th><th>Action</th></tr></thead>
+                            <tbody id="remed-tbody"></tbody>
+                        </table>
+                        <div id="remed-empty" style="padding:2rem;text-align:center;color:var(--t3);font-size:.85rem;display:none"><i class="fas fa-check-circle" style="color:var(--ok);font-size:1.5rem;margin-bottom:.5rem;display:block"></i>All clear — no outstanding remediations.</div>
+                    </div>
+                </div>
+            </div>
+            </div><!-- /ops-sec-assessments -->
+
+            <!-- ═══ SECTION: Daily Site Supervisor Checklist ═══ -->
+            <div id="ops-sec-dailychecklist" class="ops-section" style="display:none">
+            <div class="owner-section">
+                <h3><i class="fas fa-tasks"></i> Daily Site Supervisor Checklist
+                    <span style="margin-left:auto;font-size:.72rem;font-weight:500;color:var(--t3);display:inline-flex;align-items:center;gap:.35rem">
+                        <i class="fas fa-clock"></i> Daily deadline: <strong style="color:var(--warn)">11:59 AM</strong>
+                    </span>
+                </h3>
+                <p style="font-size:.82rem;color:var(--t2);margin-top:-.5rem;margin-bottom:1rem">Completed each morning by the Manager or CSA Supervisor. Covers Equipment / Environment, Duties Before Hand-over, PPE, and the Morning Huddle.</p>
+
+                <div style="font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin-bottom:.65rem">Today's Status</div>
+                <div id="dc-today-grid" class="dc-today-grid"></div>
+
+                <div style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--bdr)">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+                        <div style="font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t3)">History</div>
+                        <div style="display:flex;align-items:center;gap:.75rem">
+                            <label style="font-size:.7rem;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em">Store</label>
+                            <select id="dc-f-store" onchange="dcRenderHistory()" style="border:1px solid var(--bdr);border-radius:7px;padding:.4rem .65rem;font-size:.8rem;font-family:inherit;color:var(--t1);background:#fff;outline:none">
+                                <option value="">All stores</option>
+                                <option value="Hillcrest">Hillcrest</option>
+                                <option value="Hammersdale">Hammersdale</option>
+                                <option value="Gillits">Gillits</option>
+                                <option value="Cato Ridge">Cato Ridge</option>
+                            </select>
+                            <span id="dc-history-count" style="font-size:.75rem;color:var(--t3)"></span>
+                        </div>
+                    </div>
+                    <div class="csa-tbl-wrap">
+                        <table class="csa-tbl">
+                            <thead><tr><th>Date</th><th>Store</th><th>Supervisor</th><th>Compliance</th><th>Toolbox Topic</th><th>Action</th></tr></thead>
+                            <tbody id="dc-history-tbody"></tbody>
+                        </table>
+                        <div id="dc-history-empty" style="padding:2rem;text-align:center;color:var(--t3);font-size:.85rem;display:none"><i class="fas fa-inbox" style="font-size:1.4rem;margin-bottom:.5rem;display:block;color:var(--t3)"></i>No daily checklists submitted yet. Use the cards above to fill in today's checklists.</div>
+                    </div>
+                </div>
+            </div>
+            </div><!-- /ops-sec-dailychecklist -->
+
+            <!-- ═══ SECTION: Training & Audit Documents ═══ -->
+            <div id="ops-sec-training" class="ops-section" style="display:none">
+            <!-- Training & Audit Documents -->
+            <div class="owner-section">
+                <h3><i class="fas fa-book-open"></i> Training & Audit Documents</h3>
+                <div class="card-grid">
+                    <div class="action-card" onclick="window.open('#4step-doc','_blank');alert('Configure OneDrive URL for the 4-Step Training Document.')">
+                        <div class="card-icon" style="background:#fff7ed;color:#f97316"><i class="fas fa-graduation-cap"></i></div>
+                        <h4>We Bring the Energy — 4-Step Approach</h4>
+                        <p>CSA forecourt service training guide. The 4-step energy service approach.</p>
+                    </div>
+                    <div class="action-card" onclick="window.open('#mystery-shopper-doc','_blank');alert('Configure OneDrive URL for the Mystery Shopper Questionnaire.')">
+                        <div class="card-icon" style="background:#f0f9ff;color:#3b82f6"><i class="fas fa-user-secret"></i></div>
+                        <h4>Mystery Shopper Questionnaire — 100% Example</h4>
+                        <p>Reference audit showing a perfect score across Forecourt, Shop & Restrooms.</p>
+                    </div>
+                </div>
+                <div style="font-size:.7rem;color:var(--t3);margin-top:.5rem;display:flex;align-items:center;gap:.35rem"><i class="fas fa-info-circle"></i> Document links to be configured — upload to OneDrive and update URLs.</div>
+            </div>
+            </div><!-- /ops-sec-training -->
+
+            <!-- ═══ SECTION: Team Controls ═══ -->
+            <div id="ops-sec-teamcontrols" class="ops-section" style="display:none">
+            <!-- Team Controls -->
+            <div class="owner-section">
+                <h3><i class="fas fa-cogs"></i> Team Controls</h3>
+                <div class="card-grid">
+                    <div class="action-card" onclick="openTemplateVault()">
+                        <div class="card-icon"><i class="fas fa-folder-open"></i></div>
+                        <h4>Template Vault</h4>
+                        <p>Shared document templates and forms.</p>
+                    </div>
+                    <div class="action-card" onclick="openIncidentReporting()">
+                        <div class="card-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                        <h4>Incident Reports</h4>
+                        <p>Review all logged incidents across stores.</p>
+                    </div>
+                    <div class="action-card" onclick="openConferenceCalls()">
+                        <div class="card-icon"><i class="fas fa-phone"></i></div>
+                        <h4>Conference Calls</h4>
+                        <p>Call notes and documentation vault.</p>
+                    </div>
+                </div>
+            </div>
+            </div><!-- /ops-sec-teamcontrols -->
+        </div>
+
+    </div><!-- /content-area -->
+</div><!-- /main -->

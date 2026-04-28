@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+:root {
+  --astron-purple: #5000A0;
+  --astron-orange: #FF6600;
+  --background: #f8fafc;
+  --foreground: #171717;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', system-ui, sans-serif;
+}
