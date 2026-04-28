@@ -1,7 +1,8 @@
+
 "use client";
 
 import NoticeBoard from "../components/NoticeBoard";
-
+export const dynamic = 'force-dynamic';
 export default function HomeDashboardPage() {
   return (
     <div className="space-y-6">
