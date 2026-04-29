@@ -1090,8 +1090,8 @@ export default function FuelPlannerPage() {
               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-[#ff6e00]"
             >
               {Array.from({ length: 18 }, (_, idx) => {
-                const base = new Date();
-                base.setMonth(base.getMonth() - 6 + idx);
+                const today = new Date();
+                const base = new Date(today.getFullYear(), today.getMonth() - 6 + idx, 1);
                 const key = monthKeyFor(base);
                 return (
                   <option key={key} value={key}>
