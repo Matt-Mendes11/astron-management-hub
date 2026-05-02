@@ -6,22 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useSearchParams } from "next/navigation";
-import {
-  Area,
-  CartesianGrid,
-  ComposedChart,
-  Legend,
-  Line,
-  PolarAngleAxis,
-  RadialBar,
-  RadialBarChart,
-  ReferenceArea,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { PolarAngleAxis, RadialBar, RadialBarChart } from "recharts";
 export const dynamic = 'force-dynamic';
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/rest\/v1\/$/, "") || "";
@@ -29,6 +14,16 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const n = (v) => Number(v ?? 0);
+
+/** Strip invalid chars; allow one decimal point for currency/litre entry. */
+const sanitizeDecimalInput = (raw) => {
+  if (raw == null) return "";
+  let s = String(raw).replace(/[^\d.]/g, "");
+  const firstDot = s.indexOf(".");
+  if (firstDot === -1) return s;
+  return s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
+};
+
 const formatDay = (dateValue) => {
   if (!dateValue) return "-";
   const dt = new Date(dateValue);
@@ -58,12 +53,14 @@ const monthDayCount = (monthKey) => {
 };
 const STORE_OPTIONS = ["Hillcrest", "Hammersdale", "Gillitts", "Cato Ridge"];
 
+/** Passcode for unlocking tank capacity editing (browser prompt). Replace with env later if needed. */
+const TANK_CAPACITY_UNLOCK_CODE = "1234";
+
+const DEFAULT_TANK_CAPACITY_L = 30000;
+
 const BRAND_PURPLE = [60, 0, 139];
 const BRAND_ORANGE = [255, 110, 0];
 const KL_TO_LITERS = 1000;
-const EXECUTIVE_NAVY = "#1e3a8a";
-const EXECUTIVE_FOREST = "#059669";
-
 const klInputToLiters = (value) => Math.round(n(value) * KL_TO_LITERS);
 const litersToKlInput = (value) => {
   const liters = n(value);
@@ -176,36 +173,6 @@ function plannerRowVariance(row) {
     dsl: klInputToLiters(row.actual_dsl) - fcDslL,
     ulp: klInputToLiters(row.actual_ulp) - fcUlpL,
   };
-}
-
-function StockProjectionTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
-
-  const uniqueBySeries = {};
-  payload.forEach((entry) => {
-    if (!entry?.dataKey || entry.value == null) return;
-    uniqueBySeries[entry.dataKey] = entry;
-  });
-  const dslEntry = uniqueBySeries.dsl;
-  const ulpEntry = uniqueBySeries.ulp;
-
-  return (
-    <div className="min-w-[190px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-md">
-      <p className="mb-1.5 font-semibold text-slate-800">Day {label}</p>
-      {dslEntry ? (
-        <p className="flex items-center gap-2 text-slate-700">
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: EXECUTIVE_NAVY }} />
-          DSL: {Number(dslEntry.value).toLocaleString("en-ZA")}L
-        </p>
-      ) : null}
-      {ulpEntry ? (
-        <p className="mt-1 flex items-center gap-2 text-slate-700">
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: EXECUTIVE_FOREST }} />
-          ULP: {Number(ulpEntry.value).toLocaleString("en-ZA")}L
-        </p>
-      ) : null}
-    </div>
-  );
 }
 
 function generateMonthlyAuditPdf({
@@ -387,10 +354,12 @@ const createDefaultPlannerState = () => ({
     dsl2: 0,
     ulp1: 0,
     ulp2: 0,
-    dsl1ManualDip: 0,
-    dsl2ManualDip: 0,
-    ulp1ManualDip: 0,
-    ulp2ManualDip: 0,
+  },
+  tankCapacities: {
+    dsl1: DEFAULT_TANK_CAPACITY_L,
+    dsl2: DEFAULT_TANK_CAPACITY_L,
+    ulp1: DEFAULT_TANK_CAPACITY_L,
+    ulp2: DEFAULT_TANK_CAPACITY_L,
   },
   orders: [],
   pricing: {
@@ -404,6 +373,33 @@ const createDefaultPlannerState = () => ({
     newRetailUlp: "0",
   },
 });
+
+const normalizeTankCapacities = (partial) => ({
+  dsl1: Math.max(1, Math.round(n(partial?.dsl1 ?? DEFAULT_TANK_CAPACITY_L))),
+  dsl2: Math.max(1, Math.round(n(partial?.dsl2 ?? DEFAULT_TANK_CAPACITY_L))),
+  ulp1: Math.max(1, Math.round(n(partial?.ulp1 ?? DEFAULT_TANK_CAPACITY_L))),
+  ulp2: Math.max(1, Math.round(n(partial?.ulp2 ?? DEFAULT_TANK_CAPACITY_L))),
+});
+
+const buildAtgReadingsPayload = (storeName, monthYearLabel, state) => {
+  const caps = normalizeTankCapacities(state.tankCapacities ?? {});
+  return {
+    store_name: storeName,
+    month_year: monthYearLabel,
+    dsl_tank1: n(state.atg.dsl1),
+    dsl_tank2: n(state.atg.dsl2),
+    ulp_tank1: n(state.atg.ulp1),
+    ulp_tank2: n(state.atg.ulp2),
+    manual_dip_dsl1: 0,
+    manual_dip_dsl2: 0,
+    manual_dip_ulp1: 0,
+    manual_dip_ulp2: 0,
+    tank_capacity_dsl1: caps.dsl1,
+    tank_capacity_dsl2: caps.dsl2,
+    tank_capacity_ulp1: caps.ulp1,
+    tank_capacity_ulp2: caps.ulp2,
+  };
+};
 
 const getErrorMessage = (errorLike, fallback) => {
   if (!errorLike) return fallback;
@@ -470,6 +466,16 @@ export default function FuelPlannerPage() {
   const plannerState = plannerStateByStore[selectedStore] ?? createDefaultPlannerState();
   const [pricingForm, setPricingForm] = useState(createDefaultPlannerState().pricing);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [isCriticalSettingsOpen, setIsCriticalSettingsOpen] = useState(false);
+  const [criticalSettingsUnlocked, setCriticalSettingsUnlocked] = useState(false);
+  const [capacityDraft, setCapacityDraft] = useState({
+    dsl1: String(DEFAULT_TANK_CAPACITY_L),
+    dsl2: String(DEFAULT_TANK_CAPACITY_L),
+    ulp1: String(DEFAULT_TANK_CAPACITY_L),
+    ulp2: String(DEFAULT_TANK_CAPACITY_L),
+  });
+  const [capacityBaseline, setCapacityBaseline] = useState(() => normalizeTankCapacities({}));
+  const [editingOrderId, setEditingOrderId] = useState(null);
   const [orderForm, setOrderForm] = useState({
     deliveryDate: "",
     dslVolume: "",
@@ -487,6 +493,7 @@ export default function FuelPlannerPage() {
     atg: false,
     order: false,
     pricing: false,
+    tankSettings: false,
   });
   const daysInCurrentMonth = monthDayCount(selectedMonth);
   const [selectedYear, selectedMonthNum] = selectedMonth.split("-").map(Number);
@@ -587,11 +594,13 @@ export default function FuelPlannerPage() {
         dsl2: n(atgRow?.dsl_tank2),
         ulp1: n(atgRow?.ulp_tank1),
         ulp2: n(atgRow?.ulp_tank2),
-        dsl1ManualDip: n(atgRow?.manual_dip_dsl1),
-        dsl2ManualDip: n(atgRow?.manual_dip_dsl2),
-        ulp1ManualDip: n(atgRow?.manual_dip_ulp1),
-        ulp2ManualDip: n(atgRow?.manual_dip_ulp2),
       },
+      tankCapacities: normalizeTankCapacities({
+        dsl1: atgRow?.tank_capacity_dsl1,
+        dsl2: atgRow?.tank_capacity_dsl2,
+        ulp1: atgRow?.tank_capacity_ulp1,
+        ulp2: atgRow?.tank_capacity_ulp2,
+      }),
       orders: orderRows.map((order) => ({
         id: order.id,
         deliveryDate: order.delivery_date,
@@ -599,9 +608,9 @@ export default function FuelPlannerPage() {
         ulpVolume: n(order.ulp_vol),
         orderReference: order.ref_no ?? "",
         orderedBy: order.ordered_by ?? "",
-        dslInvoice: 0,
-        ulpInvoice: 0,
-        notes: "",
+        dslInvoice: n(order.dsl_invoice ?? order.dsl_invoice_value ?? 0),
+        ulpInvoice: n(order.ulp_invoice ?? order.ulp_invoice_value ?? 0),
+        notes: order.notes != null ? String(order.notes) : "",
         confirmed: String(order.status).toLowerCase() === "confirmed",
       })),
       pricing: nextPricing,
@@ -654,16 +663,155 @@ export default function FuelPlannerPage() {
     fetchPlannerData();
   }, [selectedStore, selectedMonth, fetchPlannerData]);
 
-  const tankCapacity = 30000;
-  const tanks = useMemo(
-    () => [
-      { label: "DSL Tank 1", value: plannerState.atg.dsl1, highColor: "#185FA5" },
-      { label: "DSL Tank 2", value: plannerState.atg.dsl2, highColor: "#185FA5" },
-      { label: "ULP Tank 1", value: plannerState.atg.ulp1, highColor: "#16a34a" },
-      { label: "ULP Tank 2", value: plannerState.atg.ulp2, highColor: "#16a34a" },
-    ],
-    [plannerState.atg]
+  const tanks = useMemo(() => {
+    const caps = plannerState.tankCapacities ?? normalizeTankCapacities({});
+    return [
+      {
+        label: "DSL Tank 1",
+        value: plannerState.atg.dsl1,
+        capacity: caps.dsl1,
+        highColor: "#185FA5",
+      },
+      {
+        label: "DSL Tank 2",
+        value: plannerState.atg.dsl2,
+        capacity: caps.dsl2,
+        highColor: "#185FA5",
+      },
+      {
+        label: "ULP Tank 1",
+        value: plannerState.atg.ulp1,
+        capacity: caps.ulp1,
+        highColor: "#16a34a",
+      },
+      {
+        label: "ULP Tank 2",
+        value: plannerState.atg.ulp2,
+        capacity: caps.ulp2,
+        highColor: "#16a34a",
+      },
+    ];
+  }, [plannerState.atg, plannerState.tankCapacities]);
+
+  const upsertAtgReadingsRow = useCallback(
+    async (payload) => {
+      let saveError = null;
+      const { error: upsertError } = await supabase
+        .from("atg_readings")
+        .upsert(payload, { onConflict: "store_name,month_year" });
+
+      if (upsertError) {
+        const { data: existing, error: lookupError } = await supabase
+          .from("atg_readings")
+          .select("id")
+          .eq("store_name", selectedStore)
+          .eq("month_year", selectedMonthLabel)
+          .maybeSingle();
+
+        if (lookupError) {
+          saveError = lookupError;
+        } else if (existing?.id) {
+          const { error: updateError } = await supabase
+            .from("atg_readings")
+            .update(payload)
+            .eq("id", existing.id);
+          saveError = updateError;
+        } else {
+          const { error: insertError } = await supabase.from("atg_readings").insert(payload);
+          saveError = insertError;
+        }
+      }
+
+      return { error: saveError || upsertError };
+    },
+    [selectedMonthLabel, selectedStore]
   );
+
+  const openCriticalSystemSettings = () => {
+    const caps = plannerState.tankCapacities ?? normalizeTankCapacities({});
+    setCapacityBaseline({ ...caps });
+    setCapacityDraft({
+      dsl1: String(caps.dsl1),
+      dsl2: String(caps.dsl2),
+      ulp1: String(caps.ulp1),
+      ulp2: String(caps.ulp2),
+    });
+    setCriticalSettingsUnlocked(false);
+    setIsCriticalSettingsOpen(true);
+  };
+
+  const closeCriticalSystemSettings = () => {
+    setIsCriticalSettingsOpen(false);
+    setCriticalSettingsUnlocked(false);
+  };
+
+  const enableCriticalCapacityEditing = () => {
+    if (
+      !window.confirm(
+        "WARNING: Changing tank capacities will affect all stock calculations. Are you sure?"
+      )
+    ) {
+      return;
+    }
+    const entered = window.prompt("Enter passcode to enable editing:");
+    if (entered === null) return;
+    if (String(entered).trim() !== TANK_CAPACITY_UNLOCK_CODE) {
+      setToast({ type: "error", message: "Incorrect passcode." });
+      return;
+    }
+    setCriticalSettingsUnlocked(true);
+  };
+
+  const saveTankCapacities = async () => {
+    if (!criticalSettingsUnlocked) {
+      setToast({ type: "error", message: "Enable editing first." });
+      return;
+    }
+
+    const nextCaps = normalizeTankCapacities({
+      dsl1: capacityDraft.dsl1,
+      dsl2: capacityDraft.dsl2,
+      ulp1: capacityDraft.ulp1,
+      ulp2: capacityDraft.ulp2,
+    });
+
+    const unchanged =
+      nextCaps.dsl1 === capacityBaseline.dsl1 &&
+      nextCaps.dsl2 === capacityBaseline.dsl2 &&
+      nextCaps.ulp1 === capacityBaseline.ulp1 &&
+      nextCaps.ulp2 === capacityBaseline.ulp2;
+
+    if (unchanged) {
+      setToast({ type: "error", message: "No changes to save." });
+      return;
+    }
+
+    setSaving((prev) => ({ ...prev, tankSettings: true }));
+    const mergedState = {
+      ...plannerState,
+      tankCapacities: nextCaps,
+    };
+    const payload = buildAtgReadingsPayload(selectedStore, selectedMonthLabel, mergedState);
+    const { error: finalError } = await upsertAtgReadingsRow(payload);
+
+    if (finalError) {
+      const errorMessage = getErrorMessage(finalError, "Unknown error while saving tank capacities.");
+      console.error("Tank capacity save error (raw):", finalError);
+      alert(`Failed to save tank capacities: ${errorMessage}`);
+      setToast({ type: "error", message: errorMessage });
+      setSaving((prev) => ({ ...prev, tankSettings: false }));
+      return;
+    }
+
+    updatePlannerState((prev) => ({
+      ...prev,
+      tankCapacities: nextCaps,
+    }));
+    setToast({ type: "success", message: "Tank capacities saved." });
+    closeCriticalSystemSettings();
+    await fetchPlannerData();
+    setSaving((prev) => ({ ...prev, tankSettings: false }));
+  };
 
   const handleAtgInput = (key, value) => {
     updatePlannerState((prev) => ({
@@ -674,48 +822,10 @@ export default function FuelPlannerPage() {
 
   const saveAtgReadings = async () => {
     setSaving((prev) => ({ ...prev, atg: true }));
-    const payload = {
-      store_name: selectedStore,
-      month_year: selectedMonthLabel,
-      dsl_tank1: n(plannerState.atg.dsl1),
-      dsl_tank2: n(plannerState.atg.dsl2),
-      ulp_tank1: n(plannerState.atg.ulp1),
-      ulp_tank2: n(plannerState.atg.ulp2),
-      manual_dip_dsl1: n(plannerState.atg.dsl1ManualDip),
-      manual_dip_dsl2: n(plannerState.atg.dsl2ManualDip),
-      manual_dip_ulp1: n(plannerState.atg.ulp1ManualDip),
-      manual_dip_ulp2: n(plannerState.atg.ulp2ManualDip),
-    };
-    let saveError = null;
-    const { error: upsertError } = await supabase
-      .from("atg_readings")
-      .upsert(payload, { onConflict: "store_name,month_year" });
+    const payload = buildAtgReadingsPayload(selectedStore, selectedMonthLabel, plannerState);
+    const { error: finalError } = await upsertAtgReadingsRow(payload);
 
-    if (upsertError) {
-      // Fallback when onConflict target has no matching unique constraint in DB.
-      const { data: existing, error: lookupError } = await supabase
-        .from("atg_readings")
-        .select("id")
-        .eq("store_name", selectedStore)
-        .eq("month_year", selectedMonthLabel)
-        .maybeSingle();
-
-      if (lookupError) {
-        saveError = lookupError;
-      } else if (existing?.id) {
-        const { error: updateError } = await supabase
-          .from("atg_readings")
-          .update(payload)
-          .eq("id", existing.id);
-        saveError = updateError;
-      } else {
-        const { error: insertError } = await supabase.from("atg_readings").insert(payload);
-        saveError = insertError;
-      }
-    }
-
-    if (upsertError || saveError) {
-      const finalError = saveError || upsertError;
+    if (finalError) {
       const errorMessage = getErrorMessage(finalError, "Unknown error while saving ATG readings.");
       console.error("ATG save error (raw):", finalError);
       alert(`Failed to save ATG readings: ${errorMessage}`);
@@ -742,6 +852,7 @@ export default function FuelPlannerPage() {
   };
 
   const openNewOrderModal = () => {
+    setEditingOrderId(null);
     setOrderForm({
       deliveryDate: monthDates[0] ?? "",
       dslVolume: "",
@@ -756,12 +867,33 @@ export default function FuelPlannerPage() {
     setIsOrderModalOpen(true);
   };
 
+  const openEditOrderModal = (order) => {
+    setEditingOrderId(order.id);
+    setOrderForm({
+      deliveryDate: order.deliveryDate,
+      dslVolume: order.dslVolume ? String(order.dslVolume) : "",
+      ulpVolume: order.ulpVolume ? String(order.ulpVolume) : "",
+      orderReference: order.orderReference,
+      orderedBy: order.orderedBy,
+      dslInvoice: order.dslInvoice ? String(order.dslInvoice) : "",
+      ulpInvoice: order.ulpInvoice ? String(order.ulpInvoice) : "",
+      notes: order.notes ?? "",
+      confirmed: order.confirmed ? "1" : "0",
+    });
+    setIsOrderModalOpen(true);
+  };
+
+  const closeOrderModal = () => {
+    setIsOrderModalOpen(false);
+    setEditingOrderId(null);
+  };
+
   const saveOrder = async () => {
     if (!orderForm.deliveryDate || !orderForm.orderReference.trim()) return;
     setSaving((prev) => ({ ...prev, order: true }));
 
     const newOrder = {
-      id: `${orderForm.deliveryDate}-${Date.now()}`,
+      id: editingOrderId ?? `${orderForm.deliveryDate}-${Date.now()}`,
       deliveryDate: orderForm.deliveryDate,
       dslVolume: n(orderForm.dslVolume),
       ulpVolume: n(orderForm.ulpVolume),
@@ -783,6 +915,38 @@ export default function FuelPlannerPage() {
       status: newOrder.confirmed ? "confirmed" : "pending",
     };
 
+    if (editingOrderId) {
+      const { error: updateError } = await supabase
+        .from("fuel_orders")
+        .update(payload)
+        .eq("id", editingOrderId)
+        .eq("store_name", selectedStore);
+
+      if (updateError) {
+        console.error("Order update error:", updateError);
+        alert(`Failed to update order: ${updateError.message}`);
+        setToast({ type: "error", message: updateError.message });
+        setSaving((prev) => ({ ...prev, order: false }));
+        return;
+      }
+
+      updatePlannerState((prev) => ({
+        ...prev,
+        orders: prev.orders
+          .map((o) =>
+            o.id === editingOrderId ? { ...newOrder, id: editingOrderId } : o
+          )
+          .sort(
+            (a, b) => new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime()
+          ),
+      }));
+      closeOrderModal();
+      setToast({ type: "success", message: "Order updated." });
+      await fetchPlannerData();
+      setSaving((prev) => ({ ...prev, order: false }));
+      return;
+    }
+
     const { data, error: insertError } = await supabase
       .from("fuel_orders")
       .insert(payload)
@@ -803,21 +967,25 @@ export default function FuelPlannerPage() {
         (a, b) => new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime()
       ),
     }));
-    setIsOrderModalOpen(false);
+    closeOrderModal();
     setToast({ type: "success", message: "Order saved." });
     await fetchPlannerData();
     setSaving((prev) => ({ ...prev, order: false }));
   };
 
   const updatePricingForm = (key, value) => {
-    setPricingForm((prev) => ({ ...prev, [key]: value }));
+    setPricingForm((prev) => ({ ...prev, [key]: sanitizeDecimalInput(value) }));
   };
 
-  const margin = (retail, cost) => {
-    const r = n(retail);
-    const c = n(cost);
-    return (r - c).toFixed(2);
-  };
+  const pricingMargins = useMemo(
+    () => ({
+      oldDsl: n(pricingForm.oldRetailDsl) - n(pricingForm.oldCostDsl),
+      oldUlp: n(pricingForm.oldRetailUlp) - n(pricingForm.oldCostUlp),
+      newDsl: n(pricingForm.newRetailDsl) - n(pricingForm.newCostDsl),
+      newUlp: n(pricingForm.newRetailUlp) - n(pricingForm.newCostUlp),
+    }),
+    [pricingForm]
+  );
 
   const savePricing = async () => {
     setSaving((prev) => ({ ...prev, pricing: true }));
@@ -911,60 +1079,6 @@ export default function FuelPlannerPage() {
   const monthlyGrossProfit = useMemo(() => {
     return monthlyTotals.dsl * effectiveDslMargin + monthlyTotals.ulp * effectiveUlpMargin;
   }, [monthlyTotals, effectiveDslMargin, effectiveUlpMargin]);
-  const dailyVarianceByDate = useMemo(() => {
-    const mapped = {};
-    plannerRows.forEach((row) => {
-      const forecastTotalL =
-        klInputToLiters(row.forecast_dsl) + klInputToLiters(row.forecast_ulp);
-      const actualTotalL = klInputToLiters(row.actual_dsl) + klInputToLiters(row.actual_ulp);
-      mapped[row.date] = forecastTotalL - actualTotalL;
-    });
-    return mapped;
-  }, [plannerRows]);
-  const stockProjectionData = useMemo(() => {
-    const initialDslStock = n(plannerState.atg.dsl1) + n(plannerState.atg.dsl2);
-    const initialUlpStock = n(plannerState.atg.ulp1) + n(plannerState.atg.ulp2);
-    let dslRunning = initialDslStock;
-    let ulpRunning = initialUlpStock;
-
-    return plannerRows.map((row) => {
-      const order = orderByDate[row.date];
-      if (order?.confirmed) {
-        dslRunning += n(order.dslVolume);
-        ulpRunning += n(order.ulpVolume);
-      }
-      dslRunning -= klInputToLiters(row.actual_dsl);
-      ulpRunning -= klInputToLiters(row.actual_ulp);
-
-      return {
-        day: new Date(row.date).getDate(),
-        dsl: Math.max(0, dslRunning),
-        ulp: Math.max(0, ulpRunning),
-      };
-    });
-  }, [plannerRows, plannerState.atg, orderByDate]);
-  const hasCriticalBreach = useMemo(
-    () => stockProjectionData.some((p) => p.dsl < 5000 || p.ulp < 5000),
-    [stockProjectionData]
-  );
-  const wetVarianceByTank = useMemo(
-    () => ({
-      dsl1: n(plannerState.atg.dsl1) - n(plannerState.atg.dsl1ManualDip),
-      dsl2: n(plannerState.atg.dsl2) - n(plannerState.atg.dsl2ManualDip),
-      ulp1: n(plannerState.atg.ulp1) - n(plannerState.atg.ulp1ManualDip),
-      ulp2: n(plannerState.atg.ulp2) - n(plannerState.atg.ulp2ManualDip),
-    }),
-    [plannerState.atg]
-  );
-  const totalMonthlyWetStockVariance = useMemo(
-    () =>
-      wetVarianceByTank.dsl1 +
-      wetVarianceByTank.dsl2 +
-      wetVarianceByTank.ulp1 +
-      wetVarianceByTank.ulp2,
-    [wetVarianceByTank]
-  );
-
   const updatePlannerCell = (date, field, value) => {
     setPlannerRows((prev) =>
       prev.map((row) => (row.date === date ? { ...row, [field]: value } : row))
@@ -1075,7 +1189,7 @@ export default function FuelPlannerPage() {
     <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-4">
-          <div>
+          <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold text-slate-900">
               F.Planner V1 — {selectedStore}
             </h2>
@@ -1100,6 +1214,30 @@ export default function FuelPlannerPage() {
                 );
               })}
             </select>
+            <button
+              type="button"
+              onClick={openCriticalSystemSettings}
+              title="Critical system settings"
+              aria-label="Settings"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+                className="h-5 w-5"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"
+                />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
             <button
               type="button"
               onClick={() =>
@@ -1163,7 +1301,7 @@ export default function FuelPlannerPage() {
                 <TankGauge
                   label={tank.label}
                   value={tank.value}
-                  capacity={tankCapacity}
+                  capacity={tank.capacity}
                   highColor={tank.highColor}
                 />
               </div>
@@ -1186,7 +1324,7 @@ export default function FuelPlannerPage() {
                 New Order
               </button>
             </div>
-            <div className="max-h-[400px] overflow-auto">
+            <div className="max-h-[min(75vh,780px)] overflow-auto">
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
@@ -1197,7 +1335,6 @@ export default function FuelPlannerPage() {
                   <th colSpan={2} className="sticky top-0 bg-slate-50 px-3 py-2 text-center font-semibold">
                     Actual Sales <span className="ml-1 text-[10px] font-medium text-slate-400">kL</span>
                   </th>
-                  <th rowSpan={2} className="sticky top-0 bg-slate-50 px-3 py-2 text-left font-semibold">Daily Variance (L)</th>
                   <th colSpan={4} className="sticky top-0 bg-slate-50 px-3 py-2 text-center font-semibold">Orders</th>
                   <th rowSpan={2} className="sticky top-0 bg-slate-50 px-3 py-2 text-left font-semibold">Ordered by</th>
                 </tr>
@@ -1273,17 +1410,6 @@ export default function FuelPlannerPage() {
                         className="w-20 rounded border border-slate-200 bg-white px-2 py-1 text-right text-[11px] font-semibold text-slate-900 outline-none focus:border-[#ff6e00]"
                       />
                     </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          dailyVarianceByDate[row.date] < 0
-                            ? "bg-red-100 text-red-700"
-                            : "bg-emerald-100 text-emerald-700"
-                        }`}
-                      >
-                        {dailyVarianceByDate[row.date].toLocaleString("en-ZA")}
-                      </span>
-                    </td>
                     <td className="px-3 py-2 text-[#185FA5]">
                       {orderByDate[row.date]?.dslVolume
                         ? orderByDate[row.date].dslVolume.toLocaleString("en-ZA")
@@ -1331,231 +1457,57 @@ export default function FuelPlannerPage() {
                   <td className="px-3 py-2" />
                   <td className="px-3 py-2" />
                   <td className="px-3 py-2" />
-                  <td className="px-3 py-2" />
                 </tr>
               </tfoot>
             </table>
             </div>
           </div>
-
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-3">
-              <h4 className="text-sm font-semibold text-slate-800">Stock Level Projection</h4>
-              <p className="text-xs text-slate-500">
-                Projection uses Actual Sales and confirmed order delivery jumps.
-              </p>
-            </div>
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={stockProjectionData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-                  <defs>
-                    <linearGradient id="dslAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={EXECUTIVE_NAVY} stopOpacity={0.2} />
-                      <stop offset="95%" stopColor={EXECUTIVE_NAVY} stopOpacity={0.05} />
-                    </linearGradient>
-                    <linearGradient id="ulpAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={EXECUTIVE_FOREST} stopOpacity={0.18} />
-                      <stop offset="95%" stopColor={EXECUTIVE_FOREST} stopOpacity={0.04} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="4 4" stroke="#f3f4f6" vertical={false} />
-                  <XAxis
-                    dataKey="day"
-                    tick={{ fontSize: 11, fontFamily: "Inter, Segoe UI, sans-serif", fill: "#334155" }}
-                    tickFormatter={(value, index) => (index % 2 === 0 ? value : "")}
-                    axisLine={false}
-                    tickLine={false}
-                    label={{
-                      value: "Day of Month",
-                      position: "insideBottom",
-                      dy: 8,
-                      style: { fontSize: 11, fontFamily: "Inter, Segoe UI, sans-serif", fill: "#475569" },
-                    }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fontFamily: "Inter, Segoe UI, sans-serif", fill: "#334155" }}
-                    label={{
-                      value: "Volume (Liters)",
-                      angle: -90,
-                      position: "insideLeft",
-                      style: { fontSize: 11, fontFamily: "Inter, Segoe UI, sans-serif", fill: "#475569" },
-                    }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip content={<StockProjectionTooltip />} />
-                  <Legend
-                    verticalAlign="top"
-                    align="right"
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: "11px", fontFamily: "Inter, Segoe UI, sans-serif" }}
-                  />
-                  {hasCriticalBreach && (
-                    <ReferenceArea y1={0} y2={5000} fill="rgba(239, 68, 68, 0.05)" />
-                  )}
-                  <ReferenceLine
-                    y={5000}
-                    stroke="#ef4444"
-                    strokeDasharray="6 6"
-                    strokeWidth={0.8}
-                    label={{ value: "Critical Level (5,000L)", fill: "#ef4444", fontSize: 10 }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="dsl"
-                    fill="url(#dslAreaGradient)"
-                    fillOpacity={1}
-                    strokeOpacity={0}
-                    legendType="none"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="ulp"
-                    fill="url(#ulpAreaGradient)"
-                    fillOpacity={1}
-                    strokeOpacity={0}
-                    legendType="none"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="dsl"
-                    name="Diesel (DSL)"
-                    stroke={EXECUTIVE_NAVY}
-                    strokeWidth={2.5}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="ulp"
-                    name="Petrol (ULP)"
-                    stroke={EXECUTIVE_FOREST}
-                    strokeWidth={2.5}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
         </Tabs.Content>
 
         <Tabs.Content value="atg">
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.75fr)_320px]">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">ATG Underground Stock</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Capture paired system and physical dip readings for each tank.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                <div className="hidden grid-cols-[120px_1fr_1fr] gap-3 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500 md:grid">
-                  <span>Tank</span>
-                  <span>System Reading (ATG)</span>
-                  <span>Physical Dip Reading</span>
-                </div>
-
-                {[
-                  { label: "DSL Tank 1", valueKey: "dsl1", dipKey: "dsl1ManualDip", variance: wetVarianceByTank.dsl1 },
-                  { label: "DSL Tank 2", valueKey: "dsl2", dipKey: "dsl2ManualDip", variance: wetVarianceByTank.dsl2 },
-                  { label: "ULP Tank 1", valueKey: "ulp1", dipKey: "ulp1ManualDip", variance: wetVarianceByTank.ulp1 },
-                  { label: "ULP Tank 2", valueKey: "ulp2", dipKey: "ulp2ManualDip", variance: wetVarianceByTank.ulp2 },
-                ].map((tank) => (
-                  <div
-                    key={tank.label}
-                    className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 md:grid-cols-[120px_1fr_1fr]"
-                  >
-                    <div className="flex items-center">
-                      <p className="text-sm font-semibold text-slate-800">{tank.label}</p>
-                    </div>
-
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-500 md:hidden">
-                        System Reading (ATG)
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="System Reading (ATG)"
-                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#ff6e00]"
-                        value={plannerState.atg[tank.valueKey]}
-                        onChange={(e) => handleAtgInput(tank.valueKey, e.target.value)}
-                      />
-                    </label>
-
-                    <label className="space-y-1">
-                      <span className="text-xs font-semibold text-slate-500 md:hidden">
-                        Physical Dip Reading
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="Physical Dip Reading"
-                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#ff6e00]"
-                        value={plannerState.atg[tank.dipKey]}
-                        onChange={(e) => handleAtgInput(tank.dipKey, e.target.value)}
-                      />
-                    </label>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-5">
-                <button
-                  type="button"
-                  onClick={saveAtgReadings}
-                  disabled={saving.atg}
-                  className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {saving.atg ? "Saving..." : "Save ATG Readings"}
-                </button>
-              </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="border-b border-slate-200 pb-4">
+              <h3 className="text-lg font-semibold text-slate-900">ATG Underground Stock</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Enter the automated tank gauge (ATG) system reading for each underground tank (litres).
+              </p>
             </div>
 
-            <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="border-b border-slate-200 pb-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Insights
-                </p>
-                <p
-                  className={`mt-2 text-2xl font-bold ${
-                    Math.abs(totalMonthlyWetStockVariance) > 50 ? "text-red-600" : "text-emerald-600"
-                  }`}
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {[
+                { label: "DSL Tank 1", valueKey: "dsl1" },
+                { label: "DSL Tank 2", valueKey: "dsl2" },
+                { label: "ULP Tank 1", valueKey: "ulp1" },
+                { label: "ULP Tank 2", valueKey: "ulp2" },
+              ].map((tank) => (
+                <label
+                  key={tank.label}
+                  className="flex min-h-[120px] flex-col justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
                 >
-                  {totalMonthlyWetStockVariance.toLocaleString("en-ZA")} L
-                </p>
-                <p className="mt-1 text-sm text-slate-500">Total wet stock variance this month</p>
-              </div>
+                  <span className="text-sm font-semibold text-slate-800">{tank.label}</span>
+                  <span className="text-xs font-semibold text-slate-500">System Reading (ATG)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Litres"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#ff6e00]"
+                    value={plannerState.atg[tank.valueKey]}
+                    onChange={(e) => handleAtgInput(tank.valueKey, e.target.value)}
+                  />
+                </label>
+              ))}
+            </div>
 
-              <div className="mt-4 space-y-3">
-                {[
-                  { label: "DSL Tank 1", variance: wetVarianceByTank.dsl1 },
-                  { label: "DSL Tank 2", variance: wetVarianceByTank.dsl2 },
-                  { label: "ULP Tank 1", variance: wetVarianceByTank.ulp1 },
-                  { label: "ULP Tank 2", variance: wetVarianceByTank.ulp2 },
-                ].map((tank) => (
-                  <div
-                    key={tank.label}
-                    className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-                  >
-                    <span className="text-sm font-medium text-slate-700">{tank.label}</span>
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        Math.abs(tank.variance) > 50
-                          ? "bg-red-100 text-red-700"
-                          : "bg-emerald-100 text-emerald-700"
-                      }`}
-                    >
-                      {tank.variance.toLocaleString("en-ZA")} L
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </aside>
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={saveAtgReadings}
+                disabled={saving.atg}
+                className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {saving.atg ? "Saving..." : "Save ATG Readings"}
+              </button>
+            </div>
           </div>
         </Tabs.Content>
 
@@ -1580,12 +1532,13 @@ export default function FuelPlannerPage() {
                     <th className="px-4 py-3 text-left font-semibold">DSL Volume (L)</th>
                     <th className="px-4 py-3 text-left font-semibold">ULP Volume (L)</th>
                     <th className="px-4 py-3 text-left font-semibold">Order Reference</th>
+                    <th className="px-4 py-3 text-right font-semibold">Edit</th>
                   </tr>
                 </thead>
                 <tbody>
                   {plannerState.orders.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-sm text-slate-500" colSpan={4}>
+                      <td className="px-4 py-6 text-sm text-slate-500" colSpan={5}>
                         No orders saved yet.
                       </td>
                     </tr>
@@ -1604,6 +1557,15 @@ export default function FuelPlannerPage() {
                         <td className="px-4 py-4 font-semibold text-slate-800">
                           {order.orderReference}
                         </td>
+                        <td className="px-4 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openEditOrderModal(order)}
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                          >
+                            Edit
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -1615,52 +1577,281 @@ export default function FuelPlannerPage() {
 
         <Tabs.Content value="pricing">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="mb-4 text-lg font-semibold text-slate-900">Pricing & Margins</h3>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="flex flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Pricing &amp; Margins</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  {selectedStore} · {selectedMonthLabel}. Margin = Retail − Cost (updates as you type).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={savePricing}
+                disabled={saving.pricing}
+                className="shrink-0 rounded-xl bg-[#ff6e00] px-6 py-2.5 text-sm font-bold text-white shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {saving.pricing ? "Saving…" : "Save"}
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-3">
               <div className="rounded-xl border border-slate-200 p-4">
-                <h4 className="mb-3 text-sm font-semibold text-slate-800">Cost Price (R/L)</h4>
-                <div className="space-y-2">
-                  <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="Old DSL" value={pricingForm.oldCostDsl} onChange={(e) => updatePricingForm("oldCostDsl", e.target.value)} />
-                  <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="Old ULP" value={pricingForm.oldCostUlp} onChange={(e) => updatePricingForm("oldCostUlp", e.target.value)} />
-                  <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="New DSL" value={pricingForm.newCostDsl} onChange={(e) => updatePricingForm("newCostDsl", e.target.value)} />
-                  <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="New ULP" value={pricingForm.newCostUlp} onChange={(e) => updatePricingForm("newCostUlp", e.target.value)} />
+                <h4 className="mb-3 text-sm font-semibold text-slate-800">Cost price (R/L)</h4>
+                <div className="space-y-3">
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Old DSL</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums outline-none focus:border-[#ff6e00]"
+                      value={pricingForm.oldCostDsl}
+                      onChange={(e) => updatePricingForm("oldCostDsl", e.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Old ULP</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums outline-none focus:border-[#ff6e00]"
+                      value={pricingForm.oldCostUlp}
+                      onChange={(e) => updatePricingForm("oldCostUlp", e.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">New DSL</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums outline-none focus:border-[#ff6e00]"
+                      value={pricingForm.newCostDsl}
+                      onChange={(e) => updatePricingForm("newCostDsl", e.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">New ULP</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums outline-none focus:border-[#ff6e00]"
+                      value={pricingForm.newCostUlp}
+                      onChange={(e) => updatePricingForm("newCostUlp", e.target.value)}
+                    />
+                  </label>
                 </div>
               </div>
               <div className="rounded-xl border border-slate-200 p-4">
-                <h4 className="mb-3 text-sm font-semibold text-slate-800">Retail Price (R/L)</h4>
-                <div className="space-y-2">
-                  <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="Old DSL" value={pricingForm.oldRetailDsl} onChange={(e) => updatePricingForm("oldRetailDsl", e.target.value)} />
-                  <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="Old ULP" value={pricingForm.oldRetailUlp} onChange={(e) => updatePricingForm("oldRetailUlp", e.target.value)} />
-                  <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="New DSL" value={pricingForm.newRetailDsl} onChange={(e) => updatePricingForm("newRetailDsl", e.target.value)} />
-                  <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="New ULP" value={pricingForm.newRetailUlp} onChange={(e) => updatePricingForm("newRetailUlp", e.target.value)} />
+                <h4 className="mb-3 text-sm font-semibold text-slate-800">Retail price (R/L)</h4>
+                <div className="space-y-3">
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Old DSL</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums outline-none focus:border-[#ff6e00]"
+                      value={pricingForm.oldRetailDsl}
+                      onChange={(e) => updatePricingForm("oldRetailDsl", e.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Old ULP</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums outline-none focus:border-[#ff6e00]"
+                      value={pricingForm.oldRetailUlp}
+                      onChange={(e) => updatePricingForm("oldRetailUlp", e.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">New DSL</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums outline-none focus:border-[#ff6e00]"
+                      value={pricingForm.newRetailDsl}
+                      onChange={(e) => updatePricingForm("newRetailDsl", e.target.value)}
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">New ULP</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums outline-none focus:border-[#ff6e00]"
+                      value={pricingForm.newRetailUlp}
+                      onChange={(e) => updatePricingForm("newRetailUlp", e.target.value)}
+                    />
+                  </label>
                 </div>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <h4 className="mb-3 text-sm font-semibold text-slate-800">Margin (R/L)</h4>
-                <div className="space-y-2 text-sm">
-                  <p>Old DSL: <span className="font-semibold">{margin(pricingForm.oldRetailDsl, pricingForm.oldCostDsl)}</span></p>
-                  <p>Old ULP: <span className="font-semibold">{margin(pricingForm.oldRetailUlp, pricingForm.oldCostUlp)}</span></p>
-                  <p>New DSL: <span className="font-semibold">{margin(pricingForm.newRetailDsl, pricingForm.newCostDsl)}</span></p>
-                  <p>New ULP: <span className="font-semibold">{margin(pricingForm.newRetailUlp, pricingForm.newCostUlp)}</span></p>
+                <p className="mb-3 text-xs text-slate-500">Retail minus cost · negative = loss</p>
+                <div className="space-y-2.5 text-sm">
+                  {[
+                    { label: "Old DSL", value: pricingMargins.oldDsl },
+                    { label: "Old ULP", value: pricingMargins.oldUlp },
+                    { label: "New DSL", value: pricingMargins.newDsl },
+                    { label: "New ULP", value: pricingMargins.newUlp },
+                  ].map((row) => (
+                    <div key={row.label} className="flex items-baseline justify-between gap-3 border-b border-slate-200/80 pb-2 last:border-0 last:pb-0">
+                      <span className="text-slate-600">{row.label}</span>
+                      <span
+                        className={`font-semibold tabular-nums ${
+                          row.value < 0 ? "text-red-600" : "text-slate-900"
+                        }`}
+                      >
+                        R {row.value.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={savePricing}
-              disabled={saving.pricing}
-              className="mt-4 rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {saving.pricing ? "Saving..." : "Save Pricing"}
-            </button>
+
+            <p className="mt-6 text-center text-xs text-slate-500">
+              One save writes all cost and retail values to Supabase for this store and month.
+            </p>
           </div>
         </Tabs.Content>
       </Tabs.Root>
 
+      {isCriticalSettingsOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 p-4">
+          <div
+            className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="critical-system-settings-title"
+          >
+            <h4
+              id="critical-system-settings-title"
+              className="text-lg font-semibold text-slate-900"
+            >
+              Critical System Settings
+            </h4>
+            <p className="mt-1 text-sm text-slate-500">
+              Tank capacities (litres) — {selectedStore}, {selectedMonthLabel}. Stored with ATG
+              readings; monthly planner gauges use these values for fill percentage.
+            </p>
+
+            {!criticalSettingsUnlocked ? (
+              <>
+                <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Current capacities (read-only)
+                  </p>
+                  <ul className="mt-3 grid gap-2 text-sm text-slate-800 sm:grid-cols-2">
+                    {[
+                      { key: "dsl1", label: "DSL Tank 1" },
+                      { key: "dsl2", label: "DSL Tank 2" },
+                      { key: "ulp1", label: "ULP Tank 1" },
+                      { key: "ulp2", label: "ULP Tank 2" },
+                    ].map(({ key, label }) => (
+                      <li key={key} className="flex justify-between gap-2 border-b border-slate-200/80 pb-2 last:border-0 last:pb-0">
+                        <span className="text-slate-600">{label}</span>
+                        <span className="font-semibold tabular-nums">
+                          {(plannerState.tankCapacities ?? normalizeTankCapacities({}))[key].toLocaleString("en-ZA")}{" "}
+                          L
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <p className="mt-4 text-sm text-slate-600">
+                  To edit capacities, confirm the warning and enter the manager passcode when
+                  prompted.
+                </p>
+                <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={closeCriticalSystemSettings}
+                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={enableCriticalCapacityEditing}
+                    className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95"
+                  >
+                    Enable Editing
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  {[
+                    { key: "dsl1", label: "DSL Tank 1 — Capacity (L)" },
+                    { key: "dsl2", label: "DSL Tank 2 — Capacity (L)" },
+                    { key: "ulp1", label: "ULP Tank 1 — Capacity (L)" },
+                    { key: "ulp2", label: "ULP Tank 2 — Capacity (L)" },
+                  ].map(({ key, label }) => (
+                    <label key={key} className="block space-y-1.5">
+                      <span className="text-xs font-semibold text-slate-600">{label}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#ff6e00]"
+                        value={capacityDraft[key]}
+                        onChange={(e) =>
+                          setCapacityDraft((prev) => ({ ...prev, [key]: e.target.value }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-4 text-xs text-slate-500">
+                  Saves to Supabase on the same record as ATG readings for this site and month.
+                  Monthly planner gauges update immediately after a successful save.
+                </p>
+                <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCriticalSettingsUnlocked(false)}
+                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Lock
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeCriticalSystemSettings}
+                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveTankCapacities}
+                    disabled={saving.tankSettings}
+                    className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving.tankSettings ? "Saving…" : "Save capacities"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {isOrderModalOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
-            <h4 className="text-lg font-semibold text-slate-900">Place New Order</h4>
+            <h4 className="text-lg font-semibold text-slate-900">
+              {editingOrderId ? "Edit order" : "Place New Order"}
+            </h4>
 
             <div className="mt-4 space-y-4">
               <div className="grid gap-3 md:grid-cols-3">
@@ -1735,7 +1926,7 @@ export default function FuelPlannerPage() {
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 type="button"
-                onClick={() => setIsOrderModalOpen(false)}
+                onClick={closeOrderModal}
                 className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Cancel
@@ -1746,7 +1937,7 @@ export default function FuelPlannerPage() {
                 disabled={saving.order}
                 className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {saving.order ? "Saving..." : "Save Order"}
+                {saving.order ? "Saving..." : editingOrderId ? "Save changes" : "Save Order"}
               </button>
             </div>
           </div>

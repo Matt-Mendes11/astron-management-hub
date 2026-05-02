@@ -96,6 +96,7 @@ const getNoticeUserId = () => {
     return `user-${Date.now()}`;
   }
 };
+/** Inline **bold** within a single line or chunk (no newlines required). */
 const parseInlineMarkdown = (line) => {
   const parts = String(line).split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, index) => {
@@ -105,43 +106,53 @@ const parseInlineMarkdown = (line) => {
     return <span key={`${part}-${index}`}>{part}</span>;
   });
 };
-const renderNoticeContent = (content) => {
-  const lines = String(content || "").split("\n");
-  const elements = [];
-  let listBuffer = [];
 
-  const flushList = (listKey) => {
-    if (!listBuffer.length) return;
-    elements.push(
-      <ul key={`list-${listKey}`} className="list-disc pl-5 space-y-1">
-        {listBuffer.map((item, idx) => (
-          <li key={`li-${listKey}-${idx}`}>{parseInlineMarkdown(item)}</li>
-        ))}
-      </ul>
-    );
-    listBuffer = [];
-  };
+/**
+ * Detects http(s) and www. URLs; renders links with security attrs.
+ * Newlines preserved by wrapping parent with whitespace-pre-wrap.
+ */
+const URL_TOKEN_SPLIT = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
 
-  lines.forEach((rawLine, index) => {
-    const line = String(rawLine || "");
-    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-    if (bullet) {
-      listBuffer.push(bullet[1]);
-      return;
+const stripUrlTrailingPunct = (url) => url.replace(/[.,;:!?)'"\]]+$/g, "");
+
+const linkifyContentMemo = (content) => {
+  const raw = String(content ?? "");
+  const tokens = raw.split(URL_TOKEN_SPLIT);
+  return tokens.map((token, i) => {
+    const trimmed = /^https?:\/\//i.test(token) || /^www\./i.test(token) ? stripUrlTrailingPunct(token) : token;
+    if (/^https?:\/\//i.test(trimmed)) {
+      return (
+        <a
+          key={`url-${i}`}
+          href={trimmed}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="break-all font-sans font-semibold text-[#185FA5] underline decoration-[#185FA5]/45 underline-offset-[3px] hover:text-[#124a80]"
+        >
+          {trimmed}
+        </a>
+      );
     }
-    flushList(index);
-    if (!line.trim()) {
-      elements.push(<div key={`sp-${index}`} className="h-2" />);
-      return;
+    if (/^www\./i.test(trimmed)) {
+      const href = `https://${trimmed}`;
+      return (
+        <a
+          key={`www-${i}`}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="break-all font-sans font-semibold text-[#185FA5] underline decoration-[#185FA5]/45 underline-offset-[3px] hover:text-[#124a80]"
+        >
+          {trimmed}
+        </a>
+      );
     }
-    elements.push(
-      <p key={`p-${index}`} className="leading-relaxed">
-        {parseInlineMarkdown(line)}
-      </p>
+    return (
+      <span key={`txt-${i}`} className="inline">
+        {parseInlineMarkdown(token)}
+      </span>
     );
   });
-  flushList("end");
-  return elements;
 };
 const normalizeAttachments = (raw) => {
   if (Array.isArray(raw)) return raw;
@@ -302,32 +313,58 @@ export default function NoticeBoard() {
       </section>
 
       {selectedNotice ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/45 p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
-            <div className="mb-3 flex items-start justify-between">
-              <div>
-                <h4 className="text-lg font-semibold text-slate-900">
-                  {selectedNotice.title || "Notice"}
-                </h4>
-                <p className="text-xs text-slate-500">
-                  {selectedNotice.branch_id} • {selectedNotice.author_name || "Unknown author"}
-                </p>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
+          <div className="flex max-h-[min(92vh,880px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl shadow-slate-900/15 ring-1 ring-slate-100">
+            {/* Memo header */}
+            <div className="border-b border-[#311162]/15 bg-gradient-to-r from-[#faf9fc] to-white px-8 pb-6 pt-7">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#311162]/70">
+                    Internal notice
+                  </p>
+                  <h4 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                    {selectedNotice.title || "Notice"}
+                  </h4>
+                  <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+                    <span>
+                      <span className="font-semibold text-slate-700">Branch:</span> {selectedNotice.branch_id}
+                    </span>
+                    <span>
+                      <span className="font-semibold text-slate-700">From:</span>{" "}
+                      {selectedNotice.author_name || "Unknown author"}
+                    </span>
+                    <span>
+                      <span className="font-semibold text-slate-700">Date:</span>{" "}
+                      <time dateTime={selectedNotice.created_at}>
+                        {new Date(selectedNotice.created_at).toLocaleString("en-ZA", {
+                          dateStyle: "long",
+                          timeStyle: "short",
+                        })}
+                      </time>
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNotice(null)}
+                  className="shrink-0 rounded-xl border-2 border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  Close
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedNotice(null)}
-                className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                Close
-              </button>
             </div>
 
-            <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
-              <div className="space-y-2">{renderNoticeContent(selectedNotice.content)}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-8 py-8">
+              <div className="rounded-xl border border-slate-200/90 bg-[#fafaf9] px-8 py-9 shadow-inner">
+                <p className="mb-4 text-[11px] font-bold uppercase tracking-wider text-slate-500">Message</p>
+                <div className="whitespace-pre-wrap break-words font-serif text-[17px] leading-[1.75] text-slate-800">
+                  {linkifyContentMemo(selectedNotice.content)}
+                </div>
+              </div>
             </div>
 
-            <div className="mt-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div className="border-t border-slate-200 bg-slate-50/80 px-8 py-6">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Attachments
               </p>
               <div className="flex flex-wrap gap-2">
@@ -368,24 +405,24 @@ export default function NoticeBoard() {
                   </button>
                 ))}
               </div>
-            </div>
 
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => markNoticeAsRead(selectedNotice.id)}
-                disabled={markingRead}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {markingRead ? "Saving..." : "Mark as Read"}
-              </button>
-              <button
-                type="button"
-                onClick={() => printNotice(selectedNotice)}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Print Notice
-              </button>
+              <div className="mt-8 flex flex-wrap justify-end gap-3 border-t border-slate-200/80 pt-6">
+                <button
+                  type="button"
+                  onClick={() => markNoticeAsRead(selectedNotice.id)}
+                  disabled={markingRead}
+                  className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {markingRead ? "Saving…" : "Mark as read"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => printNotice(selectedNotice)}
+                  className="rounded-xl border-2 border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-800 shadow-sm hover:bg-slate-50"
+                >
+                  Print notice
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -12,6 +12,8 @@ import {
   LogOut,
   Menu,
   ShieldCheck,
+  Users,
+  Wrench,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -20,6 +22,8 @@ const NAV_ITEMS = [
   { label: "Operations Hub", href: "/operations-team-hub", icon: ShieldCheck },
   { label: "Payments", href: "/payments", icon: CreditCard },
   { label: "Site Assessments", href: "/site-assessments", icon: ClipboardCheck },
+  { label: "Repairs & Maintenance", href: "/repairs-maintenance", icon: Wrench },
+  { label: "Staff Management", href: "/staff-management", icon: Users },
 ];
 
 const isItemActive = (pathname, href) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import * as Tabs from "@radix-ui/react-tabs";
 import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
@@ -172,9 +173,17 @@ const read = (row, keys, fallback = "") => {
   return fallback;
 };
 
+const assessmentSubjectDisplay = (record) => {
+  const ans = read(record, ["answers"], null);
+  if (ans && typeof ans === "object" && ans.subjectName != null && String(ans.subjectName).trim()) {
+    return String(ans.subjectName).trim();
+  }
+  return "—";
+};
+
 export default function SiteAssessmentsPage() {
   const searchParams = useSearchParams();
-  const selectedStore = searchParams.get("store") || "Hillcrest";
+  const selectedStore = STORES.includes(searchParams.get("store")) ? searchParams.get("store") : "Hillcrest";
 
   const [activeTab, setActiveTab] = useState("daily");
   const [now, setNow] = useState(new Date());
@@ -196,6 +205,8 @@ export default function SiteAssessmentsPage() {
 
   const [assessmentType, setAssessmentType] = useState("csa_forecourt");
   const [assessmentSubject, setAssessmentSubject] = useState("");
+  const [assessmentStaffId, setAssessmentStaffId] = useState("");
+  const [staffProfiles, setStaffProfiles] = useState([]);
   const [assessmentAssessor, setAssessmentAssessor] = useState("");
   const [assessmentDate, setAssessmentDate] = useState(todayStr());
   const [assessmentAnswers, setAssessmentAnswers] = useState(
@@ -206,6 +217,21 @@ export default function SiteAssessmentsPage() {
     const timer = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("staff_profiles")
+        .select("id, full_name")
+        .eq("store_name", selectedStore)
+        .order("full_name");
+      if (!cancelled) setStaffProfiles(data || []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStore]);
 
   const loadData = async () => {
     setLoading(true);
@@ -372,6 +398,7 @@ export default function SiteAssessmentsPage() {
       assessment_type: ASSESSMENT_TYPE_DB_VALUE[assessmentType] || "Forecourt",
       assessor_name: assessmentAssessor.trim(),
       score: scorePct,
+      ...(assessmentStaffId ? { staff_id: assessmentStaffId } : {}),
       answers: {
         version: "v1",
         assessmentKey: assessmentType,
@@ -394,6 +421,7 @@ export default function SiteAssessmentsPage() {
       return;
     }
     setAssessmentSubject("");
+    setAssessmentStaffId("");
     setAssessmentAssessor("");
     setAssessmentAnswers(Array(assessmentQuestions.length).fill(null));
     await loadData();
@@ -566,6 +594,28 @@ export default function SiteAssessmentsPage() {
                 />
               </label>
               <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Staff profile (optional)
+                </span>
+                <select
+                  value={assessmentStaffId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setAssessmentStaffId(v);
+                    const person = staffProfiles.find((s) => s.id === v);
+                    if (person) setAssessmentSubject(person.full_name);
+                  }}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff6e00]"
+                >
+                  <option value="">Not linked</option>
+                  {staffProfiles.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.full_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assessor</span>
                 <input
                   value={assessmentAssessor}
@@ -676,6 +726,7 @@ export default function SiteAssessmentsPage() {
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold">Date</th>
                     <th className="px-4 py-3 text-left font-semibold">Type</th>
+                    <th className="px-4 py-3 text-left font-semibold">Subject</th>
                     <th className="px-4 py-3 text-left font-semibold">Conducted By</th>
                     <th className="px-4 py-3 text-left font-semibold">Score</th>
                     <th className="px-4 py-3 text-left font-semibold">Result</th>
@@ -685,7 +736,7 @@ export default function SiteAssessmentsPage() {
                 <tbody>
                   {filteredAssessments.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-6 text-center text-slate-500" colSpan={6}>
+                      <td className="px-4 py-6 text-center text-slate-500" colSpan={7}>
                         No previous audits for {selectedStore}.
                       </td>
                     </tr>
@@ -697,6 +748,18 @@ export default function SiteAssessmentsPage() {
                         </td>
                         <td className="px-4 py-3 text-slate-800">
                           {read(record, ["assessment_type"], "Assessment")}
+                        </td>
+                        <td className="px-4 py-3">
+                          {read(record, ["staff_id"], "") ? (
+                            <Link
+                              href={`/staff-management/${read(record, ["staff_id"], "")}?store=${encodeURIComponent(selectedStore)}`}
+                              className="font-medium text-[#c2410c] underline decoration-[#fdba74] underline-offset-2 hover:text-[#9a3412]"
+                            >
+                              {assessmentSubjectDisplay(record)}
+                            </Link>
+                          ) : (
+                            <span className="text-slate-700">{assessmentSubjectDisplay(record)}</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-slate-700">
                           {read(record, ["assessor_name", "assessor"], "Unknown")}
