@@ -5,6 +5,8 @@ import Link from "next/link";
 import * as Tabs from "@radix-ui/react-tabs";
 import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
+import AppDrillBack from "../../components/drilldown/AppDrillBack";
+import { labelToSlug } from "../../lib/stores";
 import { ClipboardCheck, MessageCircle, ShieldAlert } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -184,6 +186,17 @@ const assessmentSubjectDisplay = (record) => {
 export default function SiteAssessmentsPage() {
   const searchParams = useSearchParams();
   const selectedStore = STORES.includes(searchParams.get("store")) ? searchParams.get("store") : "Hillcrest";
+  const backHref = useMemo(() => {
+    const r = searchParams.get("return");
+    if (r) {
+      try {
+        return decodeURIComponent(r);
+      } catch {
+        return r;
+      }
+    }
+    return `/${labelToSlug(selectedStore)}/routines-and-audits`;
+  }, [searchParams, selectedStore]);
 
   const [activeTab, setActiveTab] = useState("daily");
   const [now, setNow] = useState(new Date());
@@ -462,6 +475,7 @@ export default function SiteAssessmentsPage() {
 
   return (
     <div className="space-y-6">
+      <AppDrillBack backHref={backHref} />
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-900">Site Assessments & Daily Checklist</h2>
         <p className="text-sm text-slate-600">Astron quality, compliance, and remediation tracking</p>

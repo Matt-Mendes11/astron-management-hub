@@ -1,6 +1,7 @@
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import StoreSelector from "../components/StoreSelector";
+import AppHeader from "../components/AppHeader";
 import Sidebar from "../components/Sidebar";
 export const dynamic = 'force-dynamic';
 const geistSans = Geist({
@@ -30,20 +31,9 @@ export default function RootLayout({ children }) {
 
           {/* Main area */}
           <div className="flex min-w-0 flex-1 flex-col">
-            {/* Top bar */}
-            <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
-              <h1 className="text-lg font-semibold text-slate-800">Regional Terminal Portal</h1>
-
-              <div className="flex items-center gap-4">
-                <StoreSelector />
-                <div className="h-9 w-9 rounded-full bg-[#FF6600] text-white grid place-items-center font-semibold">
-                  M
-                </div>
-                <span className="text-sm font-medium text-slate-700">
-                  M. Mendes - Regional Manager
-                </span>
-              </div>
-            </header>
+            <Suspense fallback={<div className="h-[4.25rem] shrink-0 border-b border-slate-200 bg-white" aria-hidden />}>
+              <AppHeader />
+            </Suspense>
 
             {/* Page content slot */}
             <main className="flex-1 overflow-auto p-6">{children}</main>

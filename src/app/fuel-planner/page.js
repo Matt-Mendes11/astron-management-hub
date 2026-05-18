@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { createClient } from "@supabase/supabase-js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import AppDrillBack from "../../components/drilldown/AppDrillBack";
+import { labelToSlug } from "../../lib/stores";
 import { PolarAngleAxis, RadialBar, RadialBarChart } from "recharts";
 export const dynamic = 'force-dynamic';
 const supabaseUrl =
@@ -30,6 +32,36 @@ const formatDay = (dateValue) => {
   if (Number.isNaN(dt.getTime())) return String(dateValue);
   return dt.toLocaleDateString("en-ZA", { day: "2-digit", month: "short" });
 };
+
+/** Day column: calendar date only (e.g. 01 Apr), local calendar parts (no UTC shift). */
+const formatPlannerDayCell = (isoDate) => {
+  if (!isoDate) return "—";
+  const parts = String(isoDate).split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return formatDay(isoDate);
+  const [y, m, d] = parts;
+  const dt = new Date(y, m - 1, d);
+  if (Number.isNaN(dt.getTime())) return "—";
+  const day = String(dt.getDate()).padStart(2, "0");
+  const mon = dt.toLocaleDateString("en-ZA", { month: "short" });
+  return `${day} ${mon}`;
+};
+
+/** Day + weekday for planner (calendar-correct for YYYY-MM-DD). */
+const formatPlannerDayWithWeekday = (isoDate) => {
+  if (!isoDate) return "—";
+  const parts = String(isoDate).split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return String(isoDate);
+  const [y, m, d] = parts;
+  const dt = new Date(y, m - 1, d);
+  if (Number.isNaN(dt.getTime())) return "—";
+  const day = String(dt.getDate()).padStart(2, "0");
+  const mon = dt.toLocaleDateString("en-ZA", { month: "short" });
+  const dow = dt.toLocaleDateString("en-ZA", { weekday: "short" });
+  return `${day} ${mon} · ${dow}`;
+};
+
+const formatLitresDisplay = (litres) =>
+  `${Math.round(n(litres)).toLocaleString("en-ZA")}L`;
 const formatIsoDate = (dateValue) => {
   const dt = new Date(dateValue);
   if (Number.isNaN(dt.getTime())) return "";
@@ -37,6 +69,17 @@ const formatIsoDate = (dateValue) => {
   const m = String(dt.getMonth() + 1).padStart(2, "0");
   const d = String(dt.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+};
+
+/** Map Supabase date / timestamptz values to YYYY-MM-DD keys (matches planner row `date`). */
+const normalizeDateKey = (value) => {
+  if (value == null || value === "") return "";
+  const s = String(value);
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const dt = new Date(s);
+  if (Number.isNaN(dt.getTime())) return s;
+  return formatIsoDate(dt);
 };
 const monthKeyFor = (date = new Date()) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -53,7 +96,7 @@ const monthDayCount = (monthKey) => {
 };
 const STORE_OPTIONS = ["Hillcrest", "Hammersdale", "Gillitts", "Cato Ridge"];
 
-/** Passcode for unlocking tank capacity editing (browser prompt). Replace with env later if needed. */
+/** Passcode for unlocking tank capacity editing (unlock modal). Replace with env later if needed. */
 const TANK_CAPACITY_UNLOCK_CODE = "1234";
 
 const DEFAULT_TANK_CAPACITY_L = 30000;
@@ -179,8 +222,6 @@ function generateMonthlyAuditPdf({
   storeName,
   periodLabel,
   monthKeyForFilename,
-  monthlyTotals,
-  monthlyGrossProfit,
   plannerState,
   plannerRows,
   orderByDate,
@@ -190,16 +231,9 @@ function generateMonthlyAuditPdf({
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
-  const totalSalesL = monthlyTotals.dsl + monthlyTotals.ulp;
-  const totalOrderedL = plannerState.orders.reduce(
-    (s, o) => s + n(o.dslVolume) + n(o.ulpVolume),
-    0
-  );
-  const totalLitres = monthlyTotals.dsl + monthlyTotals.ulp;
-  const dslMargin = n(plannerState.pricing.newRetailDsl) - n(plannerState.pricing.newCostDsl);
-  const ulpMargin = n(plannerState.pricing.newRetailUlp) - n(plannerState.pricing.newCostUlp);
-  const avgMarginPerL =
-    totalLitres > 0 ? monthlyGrossProfit / totalLitres : (dslMargin + ulpMargin) / 2;
+  const totalOrderedDsl = plannerState.orders.reduce((s, o) => s + n(o.dslVolume), 0);
+  const totalOrderedUlp = plannerState.orders.reduce((s, o) => s + n(o.ulpVolume), 0);
+  const totalOrderedL = totalOrderedDsl + totalOrderedUlp;
 
   const drawBrandedHeader = () => {
     doc.setFont("helvetica", "bold");
@@ -226,21 +260,18 @@ function generateMonthlyAuditPdf({
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.text(
-    `Total sales for the month: ${totalSalesL.toLocaleString("en-ZA")} L (DSL ${monthlyTotals.dsl.toLocaleString("en-ZA")} L + ULP ${monthlyTotals.ulp.toLocaleString("en-ZA")} L)`,
+    `Total DSL ordered (month): ${totalOrderedDsl.toLocaleString("en-ZA")} L`,
     margin,
     y
   );
-  y += 5;
-  doc.text(`Total fuel ordered (month): ${totalOrderedL.toLocaleString("en-ZA")} L`, margin, y);
   y += 5;
   doc.text(
-    `Average margin: R ${avgMarginPerL.toLocaleString("en-ZA", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })} / L (volume-weighted where sales recorded)`,
+    `Total ULP ordered (month): ${totalOrderedUlp.toLocaleString("en-ZA")} L`,
     margin,
     y
   );
+  y += 5;
+  doc.text(`Combined orders (month): ${totalOrderedL.toLocaleString("en-ZA")} L`, margin, y);
   y += 10;
 
   doc.setFont("helvetica", "bold");
@@ -270,7 +301,7 @@ function generateMonthlyAuditPdf({
     const v = plannerRowVariance(row);
     const fmt = (x) => (Number.isFinite(x) ? x.toLocaleString("en-ZA") : "—");
     return [
-      formatDay(row.date),
+      formatPlannerDayWithWeekday(row.date),
       row.forecast_dsl !== "" && row.forecast_dsl != null ? String(row.forecast_dsl) : "—",
       row.forecast_ulp !== "" && row.forecast_ulp != null ? String(row.forecast_ulp) : "—",
       row.actual_dsl !== "" && row.actual_dsl != null
@@ -285,7 +316,12 @@ function generateMonthlyAuditPdf({
       od?.ulpVolume != null && n(od.ulpVolume) > 0 ? n(od.ulpVolume).toLocaleString("en-ZA") : "—",
       od?.orderReference ? String(od.orderReference) : "—",
       od ? (od.confirmed ? "Confirmed" : "Ordered") : "—",
-      row.ordered_by ? String(row.ordered_by) : "—",
+      (() => {
+        const fromOrder = od?.orderedBy != null ? String(od.orderedBy).trim() : "";
+        const fromRow = row.ordered_by != null ? String(row.ordered_by).trim() : "";
+        const v = fromOrder || fromRow;
+        return v ? v : "—";
+      })(),
     ];
   });
 
@@ -414,26 +450,28 @@ const getErrorMessage = (errorLike, fallback) => {
   }
 };
 
-function TankGauge({ label, value, capacity, highColor }) {
+function TankGauge({ label, value, capacity, highColor, compact = false }) {
   const pct = Math.max(0, Math.min(100, Math.round((n(value) / Math.max(capacity, 1)) * 100)));
   const data = [{ value: pct }];
   const gaugeColor = pct < 20 ? "#dc2626" : pct <= 50 ? "#f59e0b" : highColor;
   const gaugeShellClass =
     pct < 20
-      ? "rounded-2xl border border-red-300 bg-white p-4 shadow-sm animate-pulse"
-      : "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm";
+      ? `rounded-xl border border-red-300 bg-white shadow-sm ${compact ? "p-3.5" : "p-4"} animate-pulse`
+      : `rounded-xl border border-slate-200 bg-white shadow-sm ${compact ? "p-3.5" : "p-4"}`;
+  const size = compact ? 132 : 140;
+  const litres = formatLitresDisplay(n(value));
 
   return (
     <div className={gaugeShellClass}>
-      <div className="relative mx-auto h-[140px] w-[140px]">
+      <div className="relative mx-auto" style={{ width: size, height: size }}>
         <RadialBarChart
-          width={140}
-          height={140}
+          width={size}
+          height={size}
           cx="50%"
           cy="50%"
           innerRadius="70%"
           outerRadius="100%"
-          barSize={10}
+          barSize={compact ? 10 : 10}
           data={data}
           startAngle={90}
           endAngle={-270}
@@ -441,24 +479,35 @@ function TankGauge({ label, value, capacity, highColor }) {
           <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
           <RadialBar background dataKey="value" fill={gaugeColor} cornerRadius={999} />
         </RadialBarChart>
-        <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <span className="text-2xl font-bold text-slate-900">{pct}%</span>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 text-center">
+          <span className={`font-bold tabular-nums leading-none text-slate-900 ${compact ? "text-[15px]" : "text-base"}`}>
+            {litres}
+          </span>
+          <span className={`font-semibold tabular-nums text-slate-500 ${compact ? "text-[13px]" : "text-sm"}`}>
+            {pct}%
+          </span>
         </div>
       </div>
-      <p className="mt-1 text-center text-sm font-semibold text-slate-700">{label}</p>
-      <p className="text-center text-xs text-slate-500">
-        Cap: {capacity.toLocaleString("en-ZA")}L
-      </p>
+      <p className={`mt-2 text-center font-semibold text-slate-700 ${compact ? "text-xs" : "text-sm"}`}>{label}</p>
+      <p className="text-center text-[10px] text-slate-500">Cap {capacity.toLocaleString("en-ZA")}L</p>
     </div>
   );
 }
 
-export default function FuelPlannerPage() {
+function FuelPlannerPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const returnUrl = searchParams.get("return");
   const selectedStoreParam = searchParams.get("store");
   const selectedStore = STORE_OPTIONS.includes(selectedStoreParam ?? "")
     ? selectedStoreParam
     : "Hillcrest";
+
+  useEffect(() => {
+    if (returnUrl) return;
+    const slug = labelToSlug(selectedStore);
+    router.replace(`/${slug}/fuel-management`);
+  }, [returnUrl, router, selectedStore]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(monthKeyFor());
@@ -468,6 +517,9 @@ export default function FuelPlannerPage() {
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [isCriticalSettingsOpen, setIsCriticalSettingsOpen] = useState(false);
   const [criticalSettingsUnlocked, setCriticalSettingsUnlocked] = useState(false);
+  const [capacityUnlockOpen, setCapacityUnlockOpen] = useState(false);
+  const [capacityUnlockPasscode, setCapacityUnlockPasscode] = useState("");
+  const [capacityUnlockError, setCapacityUnlockError] = useState("");
   const [capacityDraft, setCapacityDraft] = useState({
     dsl1: String(DEFAULT_TANK_CAPACITY_L),
     dsl2: String(DEFAULT_TANK_CAPACITY_L),
@@ -488,6 +540,11 @@ export default function FuelPlannerPage() {
     confirmed: "0",
   });
   const [plannerRows, setPlannerRows] = useState([]);
+  const plannerRowsRef = useRef(plannerRows);
+  const savePlannerMetricRowRef = useRef(async () => {});
+  useEffect(() => {
+    plannerRowsRef.current = plannerRows;
+  }, [plannerRows]);
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState({
     atg: false,
@@ -573,7 +630,11 @@ export default function FuelPlannerPage() {
     const orderRows = ordersRes.data || [];
     const metricRows = metricsRes.data || [];
     const metricByDate = Object.fromEntries(
-      metricRows.map((metric) => [metric.reading_date, metric])
+      metricRows.map((metric) => [normalizeDateKey(metric.reading_date), metric])
+    );
+
+    const orderByDeliveryDate = Object.fromEntries(
+      orderRows.map((o) => [normalizeDateKey(o.delivery_date), o])
     );
 
     const nextPricing = {
@@ -650,9 +711,14 @@ export default function FuelPlannerPage() {
             "actual_ulp_liters",
           ])
         ),
-        ordered_by: String(
-          readMetricField(metricByDate[isoDate], ["ordered_by", "orderedBy"]) || ""
-        ),
+        ordered_by: (() => {
+          const ord = orderByDeliveryDate[isoDate];
+          const fromOrder = String(ord?.ordered_by ?? "").trim();
+          const fromMetric = String(
+            readMetricField(metricByDate[isoDate], ["ordered_by", "orderedBy"]) || ""
+          ).trim();
+          return fromOrder || fromMetric;
+        })(),
       }))
     );
 
@@ -737,29 +803,40 @@ export default function FuelPlannerPage() {
       ulp2: String(caps.ulp2),
     });
     setCriticalSettingsUnlocked(false);
+    setCapacityUnlockOpen(false);
+    setCapacityUnlockPasscode("");
+    setCapacityUnlockError("");
     setIsCriticalSettingsOpen(true);
   };
 
   const closeCriticalSystemSettings = () => {
     setIsCriticalSettingsOpen(false);
     setCriticalSettingsUnlocked(false);
+    setCapacityUnlockOpen(false);
+    setCapacityUnlockPasscode("");
+    setCapacityUnlockError("");
   };
 
-  const enableCriticalCapacityEditing = () => {
-    if (
-      !window.confirm(
-        "WARNING: Changing tank capacities will affect all stock calculations. Are you sure?"
-      )
-    ) {
+  const openCapacityUnlockModal = () => {
+    setCapacityUnlockPasscode("");
+    setCapacityUnlockError("");
+    setCapacityUnlockOpen(true);
+  };
+
+  const closeCapacityUnlockModal = () => {
+    setCapacityUnlockOpen(false);
+    setCapacityUnlockPasscode("");
+    setCapacityUnlockError("");
+  };
+
+  const submitCapacityUnlock = () => {
+    if (String(capacityUnlockPasscode).trim() !== TANK_CAPACITY_UNLOCK_CODE) {
+      setCapacityUnlockError("Incorrect passcode.");
       return;
     }
-    const entered = window.prompt("Enter passcode to enable editing:");
-    if (entered === null) return;
-    if (String(entered).trim() !== TANK_CAPACITY_UNLOCK_CODE) {
-      setToast({ type: "error", message: "Incorrect passcode." });
-      return;
-    }
+    closeCapacityUnlockModal();
     setCriticalSettingsUnlocked(true);
+    setToast({ type: "success", message: "Tank capacity fields unlocked." });
   };
 
   const saveTankCapacities = async () => {
@@ -905,6 +982,15 @@ export default function FuelPlannerPage() {
       confirmed: orderForm.confirmed === "1",
     };
 
+    const persistOrderedByToMetrics = async () => {
+      const ob = newOrder.orderedBy.trim();
+      if (!ob) return;
+      const dKey = normalizeDateKey(newOrder.deliveryDate);
+      const snap = plannerRowsRef.current.find((r) => normalizeDateKey(r.date) === dKey);
+      if (!snap) return;
+      await savePlannerMetricRowRef.current(snap.date, { ...snap, ordered_by: ob });
+    };
+
     const payload = {
       store_name: selectedStore,
       delivery_date: newOrder.deliveryDate,
@@ -940,6 +1026,14 @@ export default function FuelPlannerPage() {
             (a, b) => new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime()
           ),
       }));
+      const dKey = normalizeDateKey(newOrder.deliveryDate);
+      const obTrim = newOrder.orderedBy.trim();
+      if (obTrim) {
+        setPlannerRows((prev) =>
+          prev.map((r) => (normalizeDateKey(r.date) === dKey ? { ...r, ordered_by: obTrim } : r))
+        );
+      }
+      await persistOrderedByToMetrics();
       closeOrderModal();
       setToast({ type: "success", message: "Order updated." });
       await fetchPlannerData();
@@ -967,6 +1061,14 @@ export default function FuelPlannerPage() {
         (a, b) => new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime()
       ),
     }));
+    const dKeyIns = normalizeDateKey(newOrder.deliveryDate);
+    const obIns = newOrder.orderedBy.trim();
+    if (obIns) {
+      setPlannerRows((prev) =>
+        prev.map((r) => (normalizeDateKey(r.date) === dKeyIns ? { ...r, ordered_by: obIns } : r))
+      );
+    }
+    await persistOrderedByToMetrics();
     closeOrderModal();
     setToast({ type: "success", message: "Order saved." });
     await fetchPlannerData();
@@ -1056,37 +1158,27 @@ export default function FuelPlannerPage() {
     setSaving((prev) => ({ ...prev, pricing: false }));
   };
 
-  const monthlyTotals = useMemo(() => {
-    return plannerRows.reduce(
-      (acc, row) => {
-        acc.dsl += klInputToLiters(row.actual_dsl);
-        acc.ulp += klInputToLiters(row.actual_ulp);
-        return acc;
-      },
-      { dsl: 0, ulp: 0 }
-    );
-  }, [plannerRows]);
-  const effectiveDslMargin = useMemo(() => {
-    const retail = n(pricingForm.newRetailDsl || pricingForm.oldRetailDsl);
-    const cost = n(pricingForm.newCostDsl || pricingForm.oldCostDsl);
-    return retail - cost;
-  }, [pricingForm]);
-  const effectiveUlpMargin = useMemo(() => {
-    const retail = n(pricingForm.newRetailUlp || pricingForm.oldRetailUlp);
-    const cost = n(pricingForm.newCostUlp || pricingForm.oldCostUlp);
-    return retail - cost;
-  }, [pricingForm]);
-  const monthlyGrossProfit = useMemo(() => {
-    return monthlyTotals.dsl * effectiveDslMargin + monthlyTotals.ulp * effectiveUlpMargin;
-  }, [monthlyTotals, effectiveDslMargin, effectiveUlpMargin]);
+  const ordersVolumeTotals = useMemo(
+    () =>
+      plannerState.orders.reduce(
+        (acc, o) => {
+          acc.dsl += n(o.dslVolume);
+          acc.ulp += n(o.ulpVolume);
+          return acc;
+        },
+        { dsl: 0, ulp: 0 }
+      ),
+    [plannerState.orders]
+  );
+
   const updatePlannerCell = (date, field, value) => {
     setPlannerRows((prev) =>
       prev.map((row) => (row.date === date ? { ...row, [field]: value } : row))
     );
   };
 
-  const savePlannerMetricRow = async (date) => {
-    const row = plannerRows.find((entry) => entry.date === date);
+  const savePlannerMetricRow = async (date, rowOverride = null) => {
+    const row = rowOverride ?? plannerRows.find((entry) => entry.date === date);
     if (!row) return;
 
     const { data: existingMetricRow } = await supabase
@@ -1168,33 +1260,70 @@ export default function FuelPlannerPage() {
     }
   };
 
+  savePlannerMetricRowRef.current = savePlannerMetricRow;
+
   useEffect(() => {
     if (!toast) return;
     const timeout = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(timeout);
   }, [toast]);
 
+  const backHref = useMemo(() => {
+    if (returnUrl) {
+      try {
+        return decodeURIComponent(returnUrl);
+      } catch {
+        return returnUrl;
+      }
+    }
+    return `/${labelToSlug(selectedStore)}/fuel-management`;
+  }, [returnUrl, selectedStore]);
+
+  if (!returnUrl) {
+    return (
+      <div className="grid min-h-[40vh] place-items-center p-8 text-center text-sm text-slate-600">
+        Redirecting to Fuel Management…
+      </div>
+    );
+  }
+
   if (loading)
     return (
-      <div className="grid min-h-[50vh] place-items-center p-6">
-        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-[#ff6e00]" />
-          Loading...
+      <div className="space-y-4">
+        <AppDrillBack backHref={backHref} />
+        <div className="grid min-h-[50vh] place-items-center p-6">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-[#ff6e00]" />
+            Loading...
+          </div>
         </div>
       </div>
     );
-  if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
+  if (error)
+    return (
+      <div className="space-y-4">
+        <AppDrillBack backHref={backHref} />
+        <div className="p-6 text-red-600">Error: {error}</div>
+      </div>
+    );
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold text-slate-900">
-              F.Planner V1 — {selectedStore}
+      <AppDrillBack backHref={backHref} />
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Monthly Fuel Planner
+            </p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+              {selectedMonthLabel}
             </h2>
-            <p className="text-xs text-slate-500">
-              Account: 0322605 | Astron: 0860 300 860 | Unitrans: 0810 314 215
+            <p className="mt-1 text-sm text-slate-600">{selectedStore}</p>
+            <p className="mt-2 max-w-xl text-[11px] leading-relaxed text-slate-500">
+              Month fuel ordered (L): DSL {ordersVolumeTotals.dsl.toLocaleString("en-ZA")} · ULP{" "}
+              {ordersVolumeTotals.ulp.toLocaleString("en-ZA")} · Combined{" "}
+              {(ordersVolumeTotals.dsl + ordersVolumeTotals.ulp).toLocaleString("en-ZA")}
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">
@@ -1245,8 +1374,6 @@ export default function FuelPlannerPage() {
                   storeName: selectedStore,
                   periodLabel: selectedMonthLabel,
                   monthKeyForFilename: selectedMonth,
-                  monthlyTotals,
-                  monthlyGrossProfit,
                   plannerState,
                   plannerRows,
                   orderByDate,
@@ -1261,7 +1388,7 @@ export default function FuelPlannerPage() {
               onClick={openNewOrderModal}
               className="rounded-lg bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95"
             >
-              + New Order
+              + Orders Placed
             </button>
           </div>
         </div>
@@ -1272,7 +1399,7 @@ export default function FuelPlannerPage() {
             value="monthly"
             className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 data-[state=active]:bg-[#ff6e00] data-[state=active]:text-white"
           >
-            Monthly Planner
+            Monthly Fuel Planner
           </Tabs.Trigger>
           <Tabs.Trigger
             value="atg"
@@ -1294,59 +1421,65 @@ export default function FuelPlannerPage() {
           </Tabs.Trigger>
         </Tabs.List>
 
-        <Tabs.Content value="monthly" className="space-y-5">
-          <div className="flex gap-4 overflow-x-auto pb-1">
-            {tanks.map((tank) => (
-              <div key={tank.label} className="min-w-[220px] flex-1">
+        <Tabs.Content value="monthly" className="space-y-4">
+          <div className="rounded-2xl border border-violet-200/80 bg-violet-50/50 p-4 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-800">Tank fill (ATG)</h3>
+                <p className="text-xs text-slate-600">Litres and fill % vs configured capacity</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+              {tanks.map((tank) => (
                 <TankGauge
+                  key={tank.label}
                   label={tank.label}
                   value={tank.value}
                   capacity={tank.capacity}
                   highColor={tank.highColor}
+                  compact
                 />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="overflow-hidden rounded-2xl border border-amber-200/60 bg-amber-50/30 shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200/80 bg-white px-4 py-3">
               <div>
-                <h4 className="text-sm font-semibold text-slate-800">Monthly Planner</h4>
-                <p className="text-xs text-slate-500">
-                  Estimated Gross Profit: R {monthlyGrossProfit.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
+                <h4 className="text-sm font-semibold text-slate-800">Daily sales &amp; orders</h4>
+                <p className="text-xs text-slate-500">{selectedMonthLabel}</p>
               </div>
               <button
                 type="button"
                 onClick={openNewOrderModal}
                 className="rounded-lg bg-[#ff6e00] px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-95"
               >
-                New Order
+                Orders Placed
               </button>
             </div>
-            <div className="max-h-[min(75vh,780px)] overflow-auto">
+            <div className="max-h-[min(52vh,560px)] overflow-auto bg-white">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50 text-slate-600">
+              <thead className="z-10 text-slate-600 shadow-sm">
                 <tr>
-                  <th rowSpan={2} className="sticky top-0 bg-slate-50 px-3 py-2 text-left font-semibold">Day</th>
-                  <th colSpan={2} className="sticky top-0 bg-slate-50 px-3 py-2 text-center font-semibold">
+                  <th rowSpan={2} className="sticky top-0 z-20 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left font-semibold">Day</th>
+                  <th colSpan={2} className="sticky top-0 z-20 border-b border-l-2 border-slate-300/80 bg-slate-50 px-3 py-2 text-center font-semibold">
                     Forecast <span className="ml-1 text-[10px] font-medium text-slate-400">kL</span>
                   </th>
-                  <th colSpan={2} className="sticky top-0 bg-slate-50 px-3 py-2 text-center font-semibold">
+                  <th colSpan={2} className="sticky top-0 z-20 border-b border-l-2 border-slate-300/80 bg-slate-50 px-3 py-2 text-center font-semibold">
                     Actual Sales <span className="ml-1 text-[10px] font-medium text-slate-400">kL</span>
                   </th>
-                  <th colSpan={4} className="sticky top-0 bg-slate-50 px-3 py-2 text-center font-semibold">Orders</th>
-                  <th rowSpan={2} className="sticky top-0 bg-slate-50 px-3 py-2 text-left font-semibold">Ordered by</th>
+                  <th colSpan={4} className="sticky top-0 z-20 border-b border-l-2 border-slate-300/80 bg-slate-50 px-3 py-2 text-center font-semibold">Orders Placed</th>
+                  <th rowSpan={2} className="sticky top-0 z-20 border-b border-l-2 border-slate-300/80 bg-slate-50 px-3 py-2 text-left font-semibold">Ordered by</th>
                 </tr>
                 <tr>
-                  <th className="sticky top-[32px] bg-slate-50 px-3 py-2 text-left font-semibold">DSL</th>
-                  <th className="sticky top-[32px] bg-slate-50 px-3 py-2 text-left font-semibold">ULP</th>
-                  <th className="sticky top-[32px] bg-slate-50 px-3 py-2 text-left font-semibold">DSL</th>
-                  <th className="sticky top-[32px] bg-slate-50 px-3 py-2 text-left font-semibold">ULP</th>
-                  <th className="sticky top-[32px] bg-slate-50 px-3 py-2 text-left font-semibold">DSL vol (L)</th>
-                  <th className="sticky top-[32px] bg-slate-50 px-3 py-2 text-left font-semibold">ULP vol (L)</th>
-                  <th className="sticky top-[32px] bg-slate-50 px-3 py-2 text-left font-semibold">Ref no.</th>
-                  <th className="sticky top-[32px] bg-slate-50 px-3 py-2 text-left font-semibold">Status</th>
+                  <th className="sticky top-[33px] z-20 border-b border-l-2 border-slate-300/80 bg-slate-50 px-3 py-2 text-left font-semibold">DSL</th>
+                  <th className="sticky top-[33px] z-20 border-b border-slate-200/80 bg-slate-50 px-3 py-2 text-left font-semibold">ULP</th>
+                  <th className="sticky top-[33px] z-20 border-b border-l-2 border-slate-300/80 bg-slate-50 px-3 py-2 text-left font-semibold">DSL</th>
+                  <th className="sticky top-[33px] z-20 border-b border-slate-200/80 bg-slate-50 px-3 py-2 text-left font-semibold">ULP</th>
+                  <th className="sticky top-[33px] z-20 border-b border-l-2 border-slate-300/80 bg-slate-50 px-3 py-2 text-left font-semibold">DSL vol (L)</th>
+                  <th className="sticky top-[33px] z-20 border-b border-slate-200/80 bg-slate-50 px-3 py-2 text-left font-semibold">ULP vol (L)</th>
+                  <th className="sticky top-[33px] z-20 border-b border-slate-200/80 bg-slate-50 px-3 py-2 text-left font-semibold">Ref no.</th>
+                  <th className="sticky top-[33px] z-20 border-b border-slate-200/80 bg-slate-50 px-3 py-2 text-left font-semibold">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -1361,8 +1494,10 @@ export default function FuelPlannerPage() {
                         : "bg-white"
                     }`}
                   >
-                    <td className="px-3 py-2 font-medium text-slate-700">{formatDay(row.date)}</td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="whitespace-nowrap border-r border-slate-200/90 px-3 py-2 font-medium text-slate-700">
+                      {formatPlannerDayWithWeekday(row.date)}
+                    </td>
+                    <td className="border-l-2 border-slate-300/80 px-3 py-2 text-right">
                       <input
                         type="number"
                         min="0"
@@ -1388,7 +1523,7 @@ export default function FuelPlannerPage() {
                         className="w-20 rounded border border-slate-200 bg-white px-2 py-1 text-right text-[11px] font-semibold text-slate-900 outline-none focus:border-[#ff6e00]"
                       />
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="border-l-2 border-slate-300/80 px-3 py-2 text-right">
                       <input
                         type="number"
                         min="0"
@@ -1410,7 +1545,7 @@ export default function FuelPlannerPage() {
                         className="w-20 rounded border border-slate-200 bg-white px-2 py-1 text-right text-[11px] font-semibold text-slate-900 outline-none focus:border-[#ff6e00]"
                       />
                     </td>
-                    <td className="px-3 py-2 text-[#185FA5]">
+                    <td className="border-l-2 border-slate-300/80 px-3 py-2 text-[#185FA5]">
                       {orderByDate[row.date]?.dslVolume
                         ? orderByDate[row.date].dslVolume.toLocaleString("en-ZA")
                         : ""}
@@ -1432,7 +1567,7 @@ export default function FuelPlannerPage() {
                         <span />
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="border-l-2 border-slate-300/80 px-3 py-2">
                       <input
                         type="text"
                         value={row.ordered_by || ""}
@@ -1445,27 +1580,13 @@ export default function FuelPlannerPage() {
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-slate-100/70 text-[11px] font-semibold text-slate-700">
-                <tr>
-                  <td className="px-3 py-2">Total Sales (L)</td>
-                  <td className="px-3 py-2" />
-                  <td className="px-3 py-2" />
-                  <td className="px-3 py-2">{monthlyTotals.dsl.toLocaleString("en-ZA")}</td>
-                  <td className="px-3 py-2">{monthlyTotals.ulp.toLocaleString("en-ZA")}</td>
-                  <td className="px-3 py-2" />
-                  <td className="px-3 py-2" />
-                  <td className="px-3 py-2" />
-                  <td className="px-3 py-2" />
-                  <td className="px-3 py-2" />
-                </tr>
-              </tfoot>
             </table>
             </div>
           </div>
         </Tabs.Content>
 
         <Tabs.Content value="atg">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border border-sky-200/80 bg-sky-50/40 p-5 shadow-sm">
             <div className="border-b border-slate-200 pb-4">
               <h3 className="text-lg font-semibold text-slate-900">ATG Underground Stock</h3>
               <p className="mt-1 text-sm text-slate-500">
@@ -1512,7 +1633,7 @@ export default function FuelPlannerPage() {
         </Tabs.Content>
 
         <Tabs.Content value="orders">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-slate-900">Orders</h3>
               <button
@@ -1520,11 +1641,11 @@ export default function FuelPlannerPage() {
                 onClick={openNewOrderModal}
                 className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95"
               >
-                Place New Order
+                Orders Placed
               </button>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-slate-200">
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
@@ -1546,7 +1667,7 @@ export default function FuelPlannerPage() {
                     plannerState.orders.map((order) => (
                       <tr key={order.id} className="border-t border-slate-100">
                         <td className="px-4 py-4 font-medium text-slate-700">
-                          {formatDay(order.deliveryDate)}
+                          {formatPlannerDayCell(order.deliveryDate)}
                         </td>
                         <td className="px-4 py-4 font-bold text-slate-900">
                           {order.dslVolume.toLocaleString("en-ZA")}
@@ -1768,8 +1889,8 @@ export default function FuelPlannerPage() {
                   </ul>
                 </div>
                 <p className="mt-4 text-sm text-slate-600">
-                  To edit capacities, confirm the warning and enter the manager passcode when
-                  prompted.
+                  To edit capacities, use <span className="font-semibold">Enable editing</span> and enter
+                  the manager passcode in the unlock dialog.
                 </p>
                 <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
                   <button
@@ -1781,7 +1902,7 @@ export default function FuelPlannerPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={enableCriticalCapacityEditing}
+                    onClick={openCapacityUnlockModal}
                     className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95"
                   >
                     Enable Editing
@@ -1846,11 +1967,68 @@ export default function FuelPlannerPage() {
         </div>
       )}
 
+      {capacityUnlockOpen && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-900/50 p-4">
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="capacity-unlock-title"
+          >
+            <h4 id="capacity-unlock-title" className="text-lg font-semibold text-slate-900">
+              Unlock tank capacities
+            </h4>
+            <p className="mt-2 text-sm text-slate-600">
+              Changing tank capacities affects stock and gauge calculations for this site. Enter the
+              manager passcode to enable editing.
+            </p>
+            <label className="mt-4 block space-y-1.5">
+              <span className="text-xs font-semibold text-slate-600">Passcode</span>
+              <input
+                type="password"
+                autoComplete="off"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#ff6e00]"
+                value={capacityUnlockPasscode}
+                onChange={(e) => {
+                  setCapacityUnlockPasscode(e.target.value);
+                  if (capacityUnlockError) setCapacityUnlockError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitCapacityUnlock();
+                  }
+                }}
+              />
+            </label>
+            {capacityUnlockError ? (
+              <p className="mt-2 text-sm font-medium text-red-600">{capacityUnlockError}</p>
+            ) : null}
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeCapacityUnlockModal}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitCapacityUnlock}
+                className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-semibold text-white transition hover:brightness-95"
+              >
+                Unlock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isOrderModalOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
             <h4 className="text-lg font-semibold text-slate-900">
-              {editingOrderId ? "Edit order" : "Place New Order"}
+              {editingOrderId ? "Edit order" : "Orders Placed"}
             </h4>
 
             <div className="mt-4 space-y-4">
@@ -1865,7 +2043,7 @@ export default function FuelPlannerPage() {
                     <option value="">Select day</option>
                     {monthDates.map((isoDate) => (
                       <option key={isoDate} value={isoDate}>
-                        {formatDay(isoDate)}
+                        {formatPlannerDayCell(isoDate)}
                       </option>
                     ))}
                   </select>
@@ -1955,5 +2133,17 @@ export default function FuelPlannerPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function FuelPlannerPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="grid min-h-[40vh] place-items-center text-sm text-slate-500">Loading planner…</div>
+      }
+    >
+      <FuelPlannerPageInner />
+    </Suspense>
   );
 }

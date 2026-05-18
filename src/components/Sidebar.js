@@ -1,39 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   ChevronLeft,
-  ClipboardCheck,
-  CreditCard,
-  Fuel,
-  LayoutGrid,
+  Home,
   LogOut,
   Menu,
   ShieldCheck,
-  Users,
-  Wrench,
+  Store,
 } from "lucide-react";
+import { STORE_CONFIG, isValidStoreSlug, slugToLabel } from "../lib/stores";
 
-const NAV_ITEMS = [
-  { label: "Dashboard", href: "/", icon: LayoutGrid },
-  { label: "Fuel Planner", href: "/fuel-planner", icon: Fuel },
-  { label: "Operations Hub", href: "/operations-team-hub", icon: ShieldCheck },
-  { label: "Payments", href: "/payments", icon: CreditCard },
-  { label: "Site Assessments", href: "/site-assessments", icon: ClipboardCheck },
-  { label: "Repairs & Maintenance", href: "/repairs-maintenance", icon: Wrench },
-  { label: "Staff Management", href: "/staff-management", icon: Users },
-];
-
-const isItemActive = (pathname, href) => {
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(`${href}/`);
-};
-
-export default function Sidebar() {
+function SidebarInner() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
+
+  const pathSlugMatch = pathname.match(/^\/(hillcrest|hammersdale|gillitts|cato-ridge)(?:\/|$)/);
+  const pathSlug = pathSlugMatch?.[1];
+  const activeStoreLabel =
+    pathSlug && isValidStoreSlug(pathSlug)
+      ? slugToLabel(pathSlug)
+      : searchParams.get("store") && STORE_CONFIG.some((s) => s.label === searchParams.get("store"))
+        ? searchParams.get("store")
+        : "Hillcrest";
+  const isHillcrest = activeStoreLabel === "Hillcrest";
+
+  const segments = pathname.split("/").filter(Boolean);
+  const routeRoot = segments[0] || "";
+
+  const homeActive = pathname === "/";
+  const storeLinkActive = (slug) => routeRoot === slug;
+  const opsActive =
+    pathname === "/operations-team-hub" || pathname.startsWith("/operations-team-hub/");
+
+  const opsHref = `/operations-team-hub?store=${encodeURIComponent(activeStoreLabel)}`;
+
+  const navClass = (active) =>
+    `flex items-center rounded-xl transition ${
+      collapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-3"
+    } ${
+      active
+        ? "bg-white/12 text-white shadow-sm ring-1 ring-white/15 ring-inset"
+        : "bg-transparent text-white/60 hover:bg-white/10 hover:text-white"
+    }`;
 
   return (
     <aside
@@ -63,44 +75,129 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className={`flex-1 ${collapsed ? "px-2 py-5" : "px-3 py-6"}`}>
-        <ul className="space-y-2">
-          {NAV_ITEMS.map((item) => {
-            const active = isItemActive(pathname, item.href);
-            const Icon = item.icon;
+      <nav className={`flex-1 overflow-y-auto ${collapsed ? "px-2 py-5" : "px-3 py-6"}`}>
+        <p
+          className={`${collapsed ? "px-0 text-center" : "px-4"} pb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/35`}
+        >
+          {!collapsed ? "Main" : "—"}
+        </p>
+        <ul className="space-y-1">
+          <li className="group relative">
+            {homeActive ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[#ff6a00]" /> : null}
+            <Link href="/" title={collapsed ? "Home" : ""} className={navClass(homeActive)} aria-current={homeActive ? "page" : undefined}>
+              <span className="inline-flex h-6 w-6 items-center justify-center">
+                <Home size={22} strokeWidth={1.85} />
+              </span>
+              {!collapsed ? <span className="text-[13px] font-medium tracking-wide">Home</span> : null}
+            </Link>
+            {collapsed ? (
+              <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-white/10 bg-[#231042]/95 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block">
+                Home
+              </span>
+            ) : null}
+          </li>
+        </ul>
+
+        <p
+          className={`${collapsed ? "mt-4 px-0 text-center" : "mt-6 px-4"} pb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/35`}
+        >
+          {!collapsed ? "Stores" : "—"}
+        </p>
+        <ul className="space-y-1">
+          {STORE_CONFIG.map(({ slug, label }) => {
+            const active = storeLinkActive(slug);
             return (
-              <li key={item.href} className="group relative">
-                {active ? (
-                  <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[#ff6a00]" />
-                ) : null}
+              <li key={slug} className="group relative">
+                {active ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[#ff6a00]" /> : null}
                 <Link
-                  href={item.href}
-                  title={collapsed ? item.label : ""}
-                  className={`flex items-center rounded-xl transition ${
-                    collapsed ? "justify-center px-0 py-3" : "gap-3 px-4 py-3"
-                  } ${
-                    active
-                      ? "bg-white/5 text-white"
-                      : "bg-transparent text-white/60 hover:bg-white/10 hover:text-white"
-                  }`}
+                  href={`/${slug}`}
+                  title={`${label} — branch home`}
+                  className={navClass(active)}
+                  aria-current={active ? "true" : undefined}
                 >
                   <span className="inline-flex h-6 w-6 items-center justify-center">
-                    <Icon size={20} strokeWidth={1.9} />
+                    <Store size={22} strokeWidth={1.85} />
                   </span>
-                  {!collapsed ? (
-                    <span className="text-[13px] font-medium tracking-wide">{item.label}</span>
-                  ) : null}
+                  {!collapsed ? <span className="text-[13px] font-medium tracking-wide">{label}</span> : null}
                 </Link>
                 {collapsed ? (
                   <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-white/10 bg-[#231042]/95 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block">
-                    {item.label}
+                    {label}
                   </span>
                 ) : null}
               </li>
             );
           })}
         </ul>
+
+        <p
+          className={`${collapsed ? "mt-4 px-0 text-center" : "mt-6 px-4"} pb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/35`}
+        >
+          {!collapsed ? "Management" : "—"}
+        </p>
+        <ul className="space-y-1">
+          <li className="group relative">
+            {opsActive ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[#ff6a00]" /> : null}
+            <Link
+              href={opsHref}
+              title={collapsed ? "Operations Team Hub" : ""}
+              className={navClass(opsActive)}
+              aria-current={opsActive ? "page" : undefined}
+            >
+              <span className="inline-flex h-6 w-6 items-center justify-center">
+                <ShieldCheck size={22} strokeWidth={1.85} />
+              </span>
+              {!collapsed ? (
+                <span className="text-[13px] font-medium tracking-wide">Operations Team Hub</span>
+              ) : null}
+            </Link>
+            {collapsed ? (
+              <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-white/10 bg-[#231042]/95 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block">
+                Operations Team Hub
+              </span>
+            ) : null}
+          </li>
+        </ul>
       </nav>
+
+      {collapsed ? (
+        <div className="px-2 pb-3" title={`Active site: ${activeStoreLabel}`}>
+          <div
+            className={`mx-auto flex h-10 w-10 items-center justify-center rounded-xl border ${
+              isHillcrest ? "border-[#ff6a00]/50 bg-[#ff6a00]/15 text-[#ff6a00]" : "border-white/15 bg-white/5 text-white/80"
+            }`}
+          >
+            <Store className="h-5 w-5" strokeWidth={2} aria-hidden />
+          </div>
+        </div>
+      ) : (
+        <div className="px-3 pb-4">
+          <div
+            className={`rounded-xl border px-3 py-3 ${
+              isHillcrest ? "border-[#ff6a00]/40 bg-[#ff6a00]/10" : "border-white/10 bg-white/5"
+            }`}
+          >
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/45">Active site</p>
+            <p
+              className={`mt-1 flex items-center gap-2 text-sm font-semibold ${
+                isHillcrest ? "text-[#ffb86c]" : "text-white"
+              }`}
+            >
+              <Store className="h-4 w-4 shrink-0 text-[#ff6a00]" strokeWidth={2} aria-hidden />
+              {activeStoreLabel}
+            </p>
+            {isHillcrest ? (
+              <p className="mt-2 text-[11px] leading-snug text-white/70">
+                Hillcrest is the default hub site. Use Stores to switch branch context.
+              </p>
+            ) : (
+              <p className="mt-2 text-[11px] leading-snug text-white/60">
+                Branch follows the URL path or tool links (e.g. fuel planner).
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mt-auto border-t border-white/10 p-3">
         <div className="rounded-2xl bg-white/10 p-3 backdrop-blur-sm">
@@ -135,5 +232,17 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+  );
+}
+
+export default function Sidebar() {
+  return (
+    <Suspense
+      fallback={
+        <aside className="relative flex w-64 shrink-0 flex-col border-r border-white/10 bg-gradient-to-b from-[#311162] via-[#4a1a94] to-[#2a0f55]" />
+      }
+    >
+      <SidebarInner />
+    </Suspense>
   );
 }

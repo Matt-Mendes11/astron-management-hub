@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
+import AppDrillBack from "../../components/drilldown/AppDrillBack";
+import { labelToSlug } from "../../lib/stores";
 import {
   Bar,
   BarChart,
@@ -120,6 +122,17 @@ const normalizeRecurring = (row) => ({
 export default function PaymentsPage() {
   const searchParams = useSearchParams();
   const selectedStore = searchParams.get("store") || "Hillcrest";
+  const backHref = useMemo(() => {
+    const r = searchParams.get("return");
+    if (r) {
+      try {
+        return decodeURIComponent(r);
+      } catch {
+        return r;
+      }
+    }
+    return `/${labelToSlug(selectedStore)}/admin-controls-sheet`;
+  }, [searchParams, selectedStore]);
   const today = useMemo(() => new Date(), []);
   const now = useMemo(() => new Date(), []);
 
@@ -500,6 +513,7 @@ export default function PaymentsPage() {
 
   return (
     <div className="space-y-6">
+      <AppDrillBack backHref={backHref} />
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#ff6e00]/10 text-[#ff6e00]">

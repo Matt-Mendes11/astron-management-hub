@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useParams, useSearchParams } from "next/navigation";
-import { ArrowLeft, Printer } from "lucide-react";
+import AppDrillBack from "../../../components/drilldown/AppDrillBack";
+import { Printer } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +62,18 @@ export default function StaffProfilePage() {
   const [assessments, setAssessments] = useState([]);
 
   const queryStore = `store=${encodeURIComponent(selectedStore)}`;
+
+  const backHref = useMemo(() => {
+    const r = searchParams.get("return");
+    if (r) {
+      try {
+        return decodeURIComponent(r);
+      } catch {
+        return r;
+      }
+    }
+    return `/staff-management?${queryStore}`;
+  }, [searchParams, queryStore]);
 
   const loadProfile = useCallback(async () => {
     if (!id) return;
@@ -150,15 +162,8 @@ export default function StaffProfilePage() {
       />
 
       <div className="space-y-6">
-        {/* Prominent back navigation */}
-        <div className="no-print flex flex-wrap items-center gap-3">
-          <Link
-            href={`/staff-management?${queryStore}`}
-            className="inline-flex items-center gap-2 rounded-xl border-2 border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-800 shadow-md shadow-slate-200/80 ring-1 ring-slate-100 transition hover:border-[#311162]/25 hover:bg-slate-50"
-          >
-            <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={2.5} />
-            Back to directory
-          </Link>
+        <AppDrillBack backHref={backHref} />
+        <div className="no-print flex flex-wrap items-center justify-end gap-3">
           {profile ? (
             <button
               type="button"

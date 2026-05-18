@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
+import AppDrillBack from "../../components/drilldown/AppDrillBack";
+import { labelToSlug } from "../../lib/stores";
 import { Search, UserPlus } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +62,18 @@ export default function StaffManagementPage() {
   const searchParams = useSearchParams();
   const storeParam = searchParams.get("store");
   const selectedStore = STORES.includes(storeParam) ? storeParam : "Hillcrest";
+
+  const backHref = useMemo(() => {
+    const r = searchParams.get("return");
+    if (r) {
+      try {
+        return decodeURIComponent(r);
+      } catch {
+        return r;
+      }
+    }
+    return `/${labelToSlug(selectedStore)}`;
+  }, [searchParams, selectedStore]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -142,6 +156,7 @@ export default function StaffManagementPage() {
 
   return (
     <div className="space-y-6">
+      <AppDrillBack backHref={backHref} />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <section className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white to-slate-50 p-6 shadow-sm ring-1 ring-slate-200/60">
@@ -276,7 +291,11 @@ export default function StaffManagementPage() {
                     <td className="hidden px-5 py-4 text-slate-600 sm:table-cell">{formatDate(row.joined_date)}</td>
                     <td className="px-5 py-4 text-right">
                       <Link
-                        href={`/staff-management/${row.id}?${queryStore}`}
+                        href={`/staff-management/${row.id}?${queryStore}${
+                          searchParams.get("return")
+                            ? `&return=${encodeURIComponent(searchParams.get("return"))}`
+                            : ""
+                        }`}
                         className="inline-flex rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-[#311162]/30 hover:bg-slate-50"
                       >
                         View file

@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
+import AppDrillBack from "../../components/drilldown/AppDrillBack";
+import { labelToSlug } from "../../lib/stores";
 import { Wrench } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,18 @@ export default function RepairsMaintenancePage() {
   const selectedStore = STORES.includes(searchParams.get("store"))
     ? searchParams.get("store")
     : "Hillcrest";
+
+  const backHref = useMemo(() => {
+    const r = searchParams.get("return");
+    if (r) {
+      try {
+        return decodeURIComponent(r);
+      } catch {
+        return r;
+      }
+    }
+    return `/${labelToSlug(selectedStore)}/repairs-maintenance`;
+  }, [searchParams, selectedStore]);
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -108,6 +122,7 @@ export default function RepairsMaintenancePage() {
 
   return (
     <div className="space-y-6">
+      <AppDrillBack backHref={backHref} />
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">

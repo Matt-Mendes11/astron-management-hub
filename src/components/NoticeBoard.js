@@ -167,7 +167,7 @@ const normalizeAttachments = (raw) => {
   return [];
 };
 
-export default function NoticeBoard() {
+export default function NoticeBoard({ hubLayout = false }) {
   const searchParams = useSearchParams();
   const selectedBranch = searchParams.get("store") || DEFAULT_BRANCH;
   const [notices, setNotices] = useState([]);
@@ -178,13 +178,14 @@ export default function NoticeBoard() {
   useEffect(() => {
     async function fetchNotices() {
       setLoading(true);
+      const limit = hubLayout ? 24 : 12;
       const { data, error } = await supabase
         .from("notices")
         .select("id,title,content,priority,branch_id,author_name,attachments,created_at,pinned")
         .eq("branch_id", selectedBranch)
         .order("pinned", { ascending: false })
         .order("created_at", { ascending: false })
-        .limit(12);
+        .limit(limit);
 
       if (error) {
         setNotices([]);
@@ -197,7 +198,7 @@ export default function NoticeBoard() {
     }
 
     fetchNotices();
-  }, [selectedBranch]);
+  }, [selectedBranch, hubLayout]);
 
   const hasNotices = notices.length > 0;
 
@@ -253,26 +254,60 @@ export default function NoticeBoard() {
     setMarkingRead(false);
   };
 
+  const shellClass = hubLayout
+    ? "rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
+    : "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm";
+
   return (
     <>
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
+      <section className={shellClass}>
+        <div
+          className={
+            hubLayout
+              ? "mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200/80 pb-5"
+              : "mb-4 flex items-center justify-between"
+          }
+        >
           <div>
-            <h3 className="text-base font-semibold text-slate-900">Branch Notice Board</h3>
-            <p className="text-xs text-slate-500">
-              {selectedBranch} • {loading ? "Loading..." : noticeCountLabel}
-            </p>
+            {hubLayout ? (
+              <>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Notice board
+                </p>
+                <h3 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-[1.65rem]">
+                  Leadership diary
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  {selectedBranch}
+                  <span className="text-slate-300"> · </span>
+                  {loading ? "Loading…" : noticeCountLabel}
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-base font-semibold text-slate-900">Branch Notice Board</h3>
+                <p className="text-xs text-slate-500">
+                  {selectedBranch} • {loading ? "Loading..." : noticeCountLabel}
+                </p>
+              </>
+            )}
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-            Command Center
-          </span>
+          {hubLayout ? (
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+              Feed
+            </span>
+          ) : null}
         </div>
         {!loading && !hasNotices ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
+          <div
+            className={`rounded-xl border border-dashed border-slate-300 bg-slate-50 text-slate-500 ${hubLayout ? "py-16 text-center text-base" : "p-5 text-sm"}`}
+          >
             No notices for this branch yet.
           </div>
         ) : (
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div
+            className={`grid ${hubLayout ? "gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" : "gap-3 md:grid-cols-2 xl:grid-cols-3"}`}
+          >
             {notices.map((notice) => {
               const priority = String(notice.priority || "normal").toLowerCase();
               return (
@@ -280,31 +315,45 @@ export default function NoticeBoard() {
                   key={notice.id}
                   type="button"
                   onClick={() => setSelectedNotice(notice)}
-                  className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  className={`rounded-xl border border-slate-200 bg-white text-left shadow-sm transition hover:border-slate-300 hover:shadow-md ${
+                    hubLayout ? "flex min-h-[148px] flex-col p-5" : "p-4"
+                  }`}
                 >
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                          PRIORITY_STYLES[priority] || PRIORITY_STYLES.normal
-                        }`}
+                        className={`inline-flex rounded-full px-2 py-0.5 font-semibold uppercase ${
+                          hubLayout ? "text-[11px]" : "text-[10px]"
+                        } ${PRIORITY_STYLES[priority] || PRIORITY_STYLES.normal}`}
                       >
                         {priority === "high" ? "High Priority" : priority}
                       </span>
                       {notice.pinned ? (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                        <span
+                          className={`rounded-full bg-amber-100 font-semibold text-amber-700 ${
+                            hubLayout ? "px-2.5 py-1 text-[11px]" : "px-2 py-0.5 text-[10px]"
+                          }`}
+                        >
                           📌 Pinned
                         </span>
                       ) : null}
                     </div>
-                    <span className="text-[10px] text-slate-500">
+                    <span className={`text-slate-500 ${hubLayout ? "text-xs" : "text-[10px]"}`}>
                       {new Date(notice.created_at).toLocaleDateString("en-ZA")}
                     </span>
                   </div>
-                  <h4 className="line-clamp-1 text-sm font-semibold text-slate-900">
+                  <h4
+                    className={`font-semibold text-slate-900 ${
+                      hubLayout ? "line-clamp-2 text-[0.95rem] leading-snug" : "line-clamp-1 text-sm"
+                    }`}
+                  >
                     {notice.title || "Notice"}
                   </h4>
-                  <p className="mt-1 line-clamp-2 text-xs text-slate-600">{notice.content}</p>
+                  <p
+                    className={`mt-2 text-slate-600 ${hubLayout ? "line-clamp-4 flex-1 text-sm leading-relaxed" : "line-clamp-2 text-xs"}`}
+                  >
+                    {notice.content}
+                  </p>
                 </button>
               );
             })}
