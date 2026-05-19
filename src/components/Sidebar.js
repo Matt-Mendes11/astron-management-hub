@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
+  BookOpen,
   ChevronLeft,
   Home,
   LogOut,
@@ -35,8 +36,10 @@ function SidebarInner() {
   const storeLinkActive = (slug) => routeRoot === slug;
   const opsActive =
     pathname === "/operations-team-hub" || pathname.startsWith("/operations-team-hub/");
+  const diaryActive = pathname === "/leadership-diary" || pathname.startsWith("/leadership-diary/");
 
   const opsHref = `/operations-team-hub?store=${encodeURIComponent(activeStoreLabel)}`;
+  const diaryHref = `/leadership-diary?store=${encodeURIComponent(activeStoreLabel)}`;
 
   const navClass = (active) =>
     `flex items-center rounded-xl transition ${
@@ -154,6 +157,25 @@ function SidebarInner() {
             {collapsed ? (
               <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-white/10 bg-[#231042]/95 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block">
                 Operations Team Hub
+              </span>
+            ) : null}
+          </li>
+          <li className="group relative">
+            {diaryActive ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[#ff6a00]" /> : null}
+            <Link
+              href={diaryHref}
+              title={collapsed ? "Leadership Diary" : ""}
+              className={navClass(diaryActive)}
+              aria-current={diaryActive ? "page" : undefined}
+            >
+              <span className="inline-flex h-6 w-6 items-center justify-center">
+                <BookOpen size={22} strokeWidth={1.85} />
+              </span>
+              {!collapsed ? <span className="text-[13px] font-medium tracking-wide">Leadership Diary</span> : null}
+            </Link>
+            {collapsed ? (
+              <span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md border border-white/10 bg-[#231042]/95 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block">
+                Leadership Diary
               </span>
             ) : null}
           </li>

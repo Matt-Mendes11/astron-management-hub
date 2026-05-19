@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
+import { Megaphone } from "lucide-react";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/rest\/v1\/$/, "") || "";
@@ -265,17 +266,23 @@ export default function NoticeBoard({ hubLayout = false }) {
           className={
             hubLayout
               ? "mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200/80 pb-5"
-              : "mb-4 flex items-center justify-between"
+              : "mb-4 flex items-center justify-between gap-4"
           }
         >
-          <div>
+          <div className={hubLayout ? "flex items-start gap-3" : ""}>
+            {hubLayout ? (
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#ff6a00] text-white shadow-md shadow-orange-500/25">
+                <Megaphone className="h-5 w-5" strokeWidth={2.25} aria-hidden />
+              </div>
+            ) : null}
+            <div>
             {hubLayout ? (
               <>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  Notice board
+                  Announcements
                 </p>
                 <h3 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 sm:text-[1.65rem]">
-                  Leadership diary
+                  Notice Board
                 </h3>
                 <p className="mt-2 text-sm text-slate-500">
                   {selectedBranch}
@@ -285,16 +292,20 @@ export default function NoticeBoard({ hubLayout = false }) {
               </>
             ) : (
               <>
-                <h3 className="text-base font-semibold text-slate-900">Branch Notice Board</h3>
+                <h3 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                  <Megaphone className="h-4 w-4 text-[#ff6a00]" strokeWidth={2.25} aria-hidden />
+                  Branch Notice Board
+                </h3>
                 <p className="text-xs text-slate-500">
                   {selectedBranch} • {loading ? "Loading..." : noticeCountLabel}
                 </p>
               </>
             )}
+            </div>
           </div>
           {hubLayout ? (
             <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-              Feed
+              Priorities &amp; attachments
             </span>
           ) : null}
         </div>

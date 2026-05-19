@@ -5,7 +5,17 @@ import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
 import AppDrillBack from "../../components/drilldown/AppDrillBack";
+import StaffIdDocumentField from "../../components/staff/StaffIdDocumentField";
+import StaffProfileFormFields from "../../components/staff/StaffProfileFormFields";
 import { labelToSlug } from "../../lib/stores";
+import {
+  defaultStaffForm,
+  formToStaffPayload,
+  isStaffDocumentsSchemaError,
+  STAFF_DOCUMENTS_SETUP_HINT,
+  trainingStatusStyles,
+  uploadStaffDocument,
+} from "../../lib/staff";
 import { Search, UserPlus } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +26,6 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const STORES = ["Hillcrest", "Hammersdale", "Gillitts", "Cato Ridge"];
-
-const POSITION_OPTIONS = ["Forecourt", "Shop", "Admin", "Manager"];
 
 const formatDate = (value) => {
   if (!value) return "—";
@@ -50,14 +58,6 @@ function normalizeRoleCount(position, role) {
   return p === role.toLowerCase();
 }
 
-const defaultAddForm = () => ({
-  full_name: "",
-  position: "Forecourt",
-  employee_id: "",
-  contact_number: "",
-  joined_date: "",
-});
-
 export default function StaffManagementPage() {
   const searchParams = useSearchParams();
   const storeParam = searchParams.get("store");
@@ -80,7 +80,8 @@ export default function StaffManagementPage() {
   const [staff, setStaff] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState(() => defaultAddForm());
+  const [addForm, setAddForm] = useState(() => defaultStaffForm());
+  const [addIdFile, setAddIdFile] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const loadStaff = useCallback(async () => {
@@ -88,7 +89,9 @@ export default function StaffManagementPage() {
     setError("");
     const { data, error: qErr } = await supabase
       .from("staff_profiles")
-      .select("id, store_name, full_name, position, employee_id, joined_date, contact_number, created_at")
+      .select(
+        "id, store_name, full_name, position, employee_id, joined_date, contact_number, training_status, created_at"
+      )
       .eq("store_name", selectedStore)
       .order("full_name", { ascending: true });
 
@@ -124,7 +127,8 @@ export default function StaffManagementPage() {
   const queryStore = `store=${encodeURIComponent(selectedStore)}`;
 
   const openAddModal = () => {
-    setAddForm(defaultAddForm());
+    setAddForm(defaultStaffForm());
+    setAddIdFile(null);
     setAddOpen(true);
   };
 
@@ -135,22 +139,46 @@ export default function StaffManagementPage() {
       return;
     }
     setSaving(true);
-    const payload = {
-      store_name: selectedStore,
-      full_name: name,
-      position: addForm.position || null,
-      employee_id: addForm.employee_id.trim() || null,
-      contact_number: addForm.contact_number.trim() || null,
-      joined_date: addForm.joined_date || null,
-    };
-    const { error: insErr } = await supabase.from("staff_profiles").insert(payload);
-    setSaving(false);
+    const payload = formToStaffPayload(addForm, selectedStore);
+    payload.full_name = name;
+    const { data: created, error: insErr } = await supabase
+      .from("staff_profiles")
+      .insert(payload)
+      .select("id")
+      .single();
+
     if (insErr) {
+      setSaving(false);
       alert(insErr.message || "Could not save staff member.");
       return;
     }
+
+    if (addIdFile && created?.id) {
+      const uploadResult = await uploadStaffDocument(supabase, {
+        staffId: created.id,
+        storeName: selectedStore,
+        file: addIdFile,
+      });
+      if (!uploadResult.ok) {
+        setSaving(false);
+        const schemaHint = isStaffDocumentsSchemaError(uploadResult.error)
+          ? `\n\n${STAFF_DOCUMENTS_SETUP_HINT}`
+          : "";
+        alert(
+          `Team member was saved, but the ID document could not be uploaded: ${uploadResult.error}${schemaHint}`
+        );
+        setAddOpen(false);
+        setAddForm(defaultStaffForm());
+        setAddIdFile(null);
+        await loadStaff();
+        return;
+      }
+    }
+
+    setSaving(false);
     setAddOpen(false);
-    setAddForm(defaultAddForm());
+    setAddForm(defaultStaffForm());
+    setAddIdFile(null);
     await loadStaff();
   };
 
@@ -250,6 +278,7 @@ export default function StaffManagementPage() {
                   <th className="hidden px-5 py-3.5 md:table-cell">Employee ID</th>
                   <th className="hidden px-5 py-3.5 lg:table-cell">Contact</th>
                   <th className="hidden px-5 py-3.5 sm:table-cell">Joined</th>
+                  <th className="hidden px-5 py-3.5 lg:table-cell">Training</th>
                   <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
@@ -289,6 +318,15 @@ export default function StaffManagementPage() {
                     <td className="hidden px-5 py-4 text-slate-600 md:table-cell">{row.employee_id || "—"}</td>
                     <td className="hidden px-5 py-4 text-slate-600 lg:table-cell">{row.contact_number || "—"}</td>
                     <td className="hidden px-5 py-4 text-slate-600 sm:table-cell">{formatDate(row.joined_date)}</td>
+                    <td className="hidden px-5 py-4 lg:table-cell">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ring-1 ${trainingStatusStyles(
+                          row.training_status
+                        )}`}
+                      >
+                        {row.training_status || "Pending"}
+                      </span>
+                    </td>
                     <td className="px-5 py-4 text-right">
                       <Link
                         href={`/staff-management/${row.id}?${queryStore}${
@@ -313,74 +351,31 @@ export default function StaffManagementPage() {
       {addOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
           <div
-            className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/20"
+            className="flex max-h-[min(90vh,820px)] w-full max-w-2xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20"
             role="dialog"
             aria-modal="true"
             aria-labelledby="add-staff-title"
           >
-            <h3 id="add-staff-title" className="text-lg font-bold text-slate-900">
-              Add team member
-            </h3>
-            <p className="mt-1 text-sm text-slate-500">
-              New profile for <strong className="text-slate-700">{selectedStore}</strong>
-            </p>
-
-            <div className="mt-6 space-y-4">
-              <label className="block space-y-1.5">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Full name</span>
-                <input
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-[#ff6e00] focus:ring-2 focus:ring-[#ff6e00]/20"
-                  value={addForm.full_name}
-                  onChange={(e) => setAddForm((f) => ({ ...f, full_name: e.target.value }))}
-                  placeholder="e.g. Matthew Mendes"
-                  autoComplete="name"
-                />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Position</span>
-                <select
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#ff6e00] focus:ring-2 focus:ring-[#ff6e00]/20"
-                  value={addForm.position}
-                  onChange={(e) => setAddForm((f) => ({ ...f, position: e.target.value }))}
-                >
-                  {POSITION_OPTIONS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Employee ID</span>
-                <input
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-[#ff6e00] focus:ring-2 focus:ring-[#ff6e00]/20"
-                  value={addForm.employee_id}
-                  onChange={(e) => setAddForm((f) => ({ ...f, employee_id: e.target.value }))}
-                  placeholder="Optional"
-                />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Contact number</span>
-                <input
-                  type="tel"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-[#ff6e00] focus:ring-2 focus:ring-[#ff6e00]/20"
-                  value={addForm.contact_number}
-                  onChange={(e) => setAddForm((f) => ({ ...f, contact_number: e.target.value }))}
-                  placeholder="Optional"
-                />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Joined date</span>
-                <input
-                  type="date"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-[#ff6e00] focus:ring-2 focus:ring-[#ff6e00]/20"
-                  value={addForm.joined_date}
-                  onChange={(e) => setAddForm((f) => ({ ...f, joined_date: e.target.value }))}
-                />
-              </label>
+            <div className="shrink-0 border-b border-slate-100 px-6 py-5">
+              <h3 id="add-staff-title" className="text-lg font-bold text-slate-900">
+                Add team member
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                New profile for <strong className="text-slate-700">{selectedStore}</strong>
+              </p>
             </div>
 
-            <div className="mt-8 flex flex-wrap justify-end gap-3">
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
+              <StaffProfileFormFields form={addForm} setForm={setAddForm} />
+              <StaffIdDocumentField
+                file={addIdFile}
+                onFileChange={setAddIdFile}
+                storeName={selectedStore}
+                disabled={saving}
+              />
+            </div>
+
+            <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-slate-100 px-6 py-4">
               <button
                 type="button"
                 onClick={() => setAddOpen(false)}

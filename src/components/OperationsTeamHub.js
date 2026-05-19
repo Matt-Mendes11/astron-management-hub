@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
+import { Megaphone } from "lucide-react";
+import AssessmentHistoryPanel from "./audits/AssessmentHistoryPanel";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/rest\/v1\/$/, "") || "";
@@ -285,12 +287,16 @@ export default function OperationsTeamHub() {
   const noticeCount = useMemo(() => notices.length, [notices.length]);
 
   return (
+    <div className="space-y-6">
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h3 className="text-base font-semibold text-slate-900">Operations Team Hub</h3>
+          <h3 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+            <Megaphone className="h-4 w-4 text-[#ff6a00]" strokeWidth={2.25} aria-hidden />
+            Notice Board
+          </h3>
           <p className="text-xs text-slate-500">
-            Manager&apos;s Notice Board • {selectedBranch} • {loading ? "Loading..." : `${noticeCount} notices`}
+            Announcements • {selectedBranch} • {loading ? "Loading..." : `${noticeCount} notices`}
           </p>
         </div>
         <button
@@ -523,5 +529,8 @@ export default function OperationsTeamHub() {
         </div>
       ) : null}
     </section>
+
+    <AssessmentHistoryPanel storeName={selectedBranch} />
+    </div>
   );
 }

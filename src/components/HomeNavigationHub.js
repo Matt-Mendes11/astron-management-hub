@@ -1,6 +1,8 @@
 "use client";
 
+import { Suspense } from "react";
 import { AlertTriangle, FolderOpen, Phone } from "lucide-react";
+import LeadershipDiary from "./LeadershipDiary";
 import NoticeBoard from "./NoticeBoard";
 
 function QuickAccessTile({ icon: Icon, title, description }) {
@@ -24,10 +26,22 @@ function QuickAccessTile({ icon: Icon, title, description }) {
   );
 }
 
+function DiaryFeedFallback() {
+  return (
+    <div className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-400">
+      Loading leadership diary…
+    </div>
+  );
+}
+
 export default function HomeNavigationHub() {
   return (
-    <div className="mx-auto max-w-7xl space-y-10 px-0 pb-14 sm:px-1">
+    <div className="mx-auto max-w-7xl space-y-8 px-0 pb-14 sm:px-1">
       <NoticeBoard hubLayout />
+
+      <Suspense fallback={<DiaryFeedFallback />}>
+        <LeadershipDiary compact />
+      </Suspense>
 
       <section className="border-t border-slate-200/80 pt-8">
         <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Quick access</h2>
