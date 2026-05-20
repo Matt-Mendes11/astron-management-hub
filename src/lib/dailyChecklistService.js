@@ -77,7 +77,19 @@ export async function syncDailyChecklistLifecycle(supabase, storeName) {
       })
       .select("id, status, check_date, score, completed_at")
       .single();
-    if (error) return { ok: false, error: error.message, today: null, yesterdayOverdue };
+    if (error) {
+      if (error.code === "23505" || String(error.message || "").includes("duplicate key value")) {
+        const { data: existing, error: existingErr } = await supabase
+          .from("daily_checklists")
+          .select("id, status, check_date, score, completed_at")
+          .eq("store_name", storeName)
+          .eq("check_date", today)
+          .maybeSingle();
+
+        if (!existingErr && existing) return { ok: true, today: existing, yesterdayOverdue };
+      }
+      return { ok: false, error: error.message, today: null, yesterdayOverdue };
+    }
     return { ok: true, today: created, yesterdayOverdue };
   }
 

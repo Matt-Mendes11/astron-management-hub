@@ -33,19 +33,13 @@ export default function SiteAssessmentsPage() {
     <div className="space-y-8">
       <AppDrillBack backHref={backHref} />
 
-      <header className="border-b border-slate-200 pb-5">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Site Audits &amp; Daily Checklists
-          </h1>
-          <span className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-            {selectedStore}
-          </span>
-        </div>
-        <p className="mt-2 max-w-2xl text-sm text-slate-500">
-          Corporate audit hub for this branch — checklists, templates, and performance assessments are isolated to{" "}
-          {selectedStore}.
-        </p>
+      <header className="flex flex-wrap items-baseline gap-3 border-b border-slate-200 pb-4">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          Site Audits &amp; Daily Checklists
+        </h1>
+        <span className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+          {selectedStore}
+        </span>
       </header>
 
       <Tabs.Root defaultValue="daily" className="space-y-6">

@@ -6,7 +6,12 @@ import { isValidStoreSlug, slugToLabel, storeQueryFromLabel } from "../../../lib
 export const dynamic = "force-dynamic";
 
 const ADMIN_TILES = [
-  { title: "Account Payments", description: "Supplier account payments and allocations.", buttonLabel: "Open Account Payments" },
+  {
+    title: "Account Payments",
+    description: "Supplier account payments and allocations.",
+    buttonLabel: "Open Account Payments",
+    module: "account-payments",
+  },
   { title: "Glocell Invoices", description: "Glocell billing and invoice history.", buttonLabel: "Open Glocell Invoices" },
   { title: "Credits Owing", description: "Credits on account and reconciliation notes.", buttonLabel: "Open Credits Owing" },
   { title: "Supplier Statement", description: "Supplier statement requests and archives.", buttonLabel: "Open Supplier Statement" },
@@ -14,9 +19,14 @@ const ADMIN_TILES = [
     title: "Payment Plan",
     description: "Payment planning and recurring schedules.",
     buttonLabel: "Open Payment Plan",
-    hrefKey: "payments",
+    module: "payment-plan",
   },
-  { title: "Deductions", description: "Payroll and supplier deductions tracking.", buttonLabel: "Open Deductions" },
+  {
+    title: "Deductions",
+    description: "Payroll and supplier deductions tracking.",
+    buttonLabel: "Open Deductions",
+    module: "deductions",
+  },
   { title: "Banking Recon", description: "Bank reconciliation worksheets and sign-off.", buttonLabel: "Open Banking Recon" },
 ];
 
@@ -44,8 +54,8 @@ export default async function StoreAdminControlsPage({ params }) {
             title={t.title}
             description={t.description}
             buttonLabel={t.buttonLabel}
-            href={t.hrefKey === "payments" ? paymentsHref : ""}
-            disabled={t.hrefKey !== "payments"}
+            href={t.module ? `${paymentsHref}&module=${t.module}` : ""}
+            disabled={!t.module}
           />
         ))}
       </div>

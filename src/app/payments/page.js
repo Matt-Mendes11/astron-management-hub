@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
 import AppDrillBack from "../../components/drilldown/AppDrillBack";
 import { labelToSlug } from "../../lib/stores";
+import { CalendarDays, Trash2 } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -59,6 +60,14 @@ const emptyRecurringForm = {
   notes: "",
 };
 
+const emptyCustomerPayment = {
+  accountName: "",
+  amountPaid: "",
+  datePaid: "",
+  recordedBy: "",
+  scheduleDate: "",
+};
+
 const toNum = (value) => Number(value ?? 0);
 
 const safeDate = (value) => {
@@ -100,6 +109,13 @@ const monthRange = (year, monthIndex) => {
   return { start, end };
 };
 
+const mondaysInMonth = (year, monthIndex) => {
+  const days = daysInMonth(year, monthIndex);
+  return Array.from({ length: days }, (_, index) => new Date(year, monthIndex, index + 1))
+    .filter((date) => date.getDay() === 1)
+    .map(isoDate);
+};
+
 const normalizeInvoice = (row) => ({
   id: String(row.id),
   supplierName: String(row.supplier_name || ""),
@@ -119,9 +135,98 @@ const normalizeRecurring = (row) => ({
   notes: String(row.notes || ""),
 });
 
+const normalizeCustomerPayment = (row) => ({
+  id: String(row.id),
+  accountName: String(row.account_name || ""),
+  amountPaid: row.amount_paid == null ? "" : String(row.amount_paid),
+  datePaid: row.date_paid || "",
+  recordedBy: String(row.recorded_by || ""),
+  scheduleDate: row.schedule_date || "",
+});
+
+const normalizeStaffDeduction = (row) => ({
+  id: String(row.id),
+  weekStarting: row.week_starting || "",
+  staffId: row.staff_id || "",
+  staffName: String(row.staff_name || ""),
+  dueAmount: row.due_amount == null ? "" : String(row.due_amount),
+  paymentAmount: row.payment_amount == null ? "" : String(row.payment_amount),
+  isPaid: Boolean(row.is_paid),
+  comments: String(row.comments || ""),
+  createdAt: row.created_at || "",
+});
+
+const moneyInputToValue = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const number = Number(text);
+  return Number.isFinite(number) ? number : null;
+};
+
+const normalizeDeductionName = (name) => String(name || "").trim().toLowerCase();
+
+const sortDeductionRows = (rows) =>
+  [...rows].sort((a, b) => {
+    const weekCompare = String(a.weekStarting).localeCompare(String(b.weekStarting));
+    if (weekCompare !== 0) return weekCompare;
+    return String(a.createdAt).localeCompare(String(b.createdAt));
+  });
+
+const buildDeductionRunningState = (rows) => {
+  const dueById = new Map();
+  const paymentById = new Map();
+  const balanceByName = new Map();
+  const lastByName = new Map();
+
+  sortDeductionRows(rows).forEach((row) => {
+    const nameKey = normalizeDeductionName(row.staffName);
+    const previous = nameKey ? lastByName.get(nameKey) : null;
+    const explicitDue = moneyInputToValue(row.dueAmount);
+    const explicitPayment = moneyInputToValue(row.paymentAmount);
+    const dueValue = previous ? previous.dueValue - previous.paymentValue : explicitDue || 0;
+    const paymentValue = explicitPayment ?? (previous ? previous.paymentValue : 0);
+    const paymentText = row.paymentAmount || (previous ? String(paymentValue) : "");
+
+    dueById.set(row.id, {
+      value: dueValue,
+      text: previous ? String(dueValue) : row.dueAmount,
+      isCarried: Boolean(previous),
+    });
+    paymentById.set(row.id, {
+      value: paymentValue,
+      text: paymentText,
+      isCarried: Boolean(previous && !row.paymentAmount),
+    });
+
+    if (nameKey) {
+      const balance = dueValue - paymentValue;
+      const next = {
+        name: row.staffName.trim(),
+        dueValue,
+        paymentValue,
+        balance,
+        weekStarting: row.weekStarting,
+      };
+      lastByName.set(nameKey, next);
+      balanceByName.set(nameKey, next);
+    }
+  });
+
+  return { dueById, paymentById, balanceByName };
+};
+
+const MODULE_TABS = {
+  "account-payments": "invoices",
+  "payment-plan": "customer-accounts",
+  deductions: "deductions",
+};
+
 export default function PaymentsPage() {
   const searchParams = useSearchParams();
   const selectedStore = searchParams.get("store") || "Hillcrest";
+  const activeModule = searchParams.get("module") || "account-payments";
+  const initialTab = MODULE_TABS[activeModule] || "invoices";
+  const isAccountPaymentsView = activeModule === "account-payments";
   const backHref = useMemo(() => {
     const r = searchParams.get("return");
     if (r) {
@@ -136,8 +241,7 @@ export default function PaymentsPage() {
   const today = useMemo(() => new Date(), []);
   const now = useMemo(() => new Date(), []);
 
-  const [activeTab, setActiveTab] = useState("invoices");
-  const [view, setView] = useState("hub");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [loading, setLoading] = useState(true);
@@ -145,6 +249,8 @@ export default function PaymentsPage() {
   const [error, setError] = useState("");
   const [dbInvoices, setDbInvoices] = useState([]);
   const [recurring, setRecurring] = useState([]);
+  const [customerPayments, setCustomerPayments] = useState([]);
+  const [staffDeductions, setStaffDeductions] = useState([]);
   const [editingInvoiceId, setEditingInvoiceId] = useState("");
   const [editingRecurringId, setEditingRecurringId] = useState("");
   const [invoiceForm, setInvoiceForm] = useState(emptyInvoiceForm);
@@ -152,18 +258,13 @@ export default function PaymentsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusUpdatingId, setStatusUpdatingId] = useState("");
 
-  const adminCards = [
-    { id: "account-payments", title: "Account Payments", enabled: true },
-    { id: "glocell-invoices", title: "Glocell Invoices", enabled: false },
-    { id: "credits-owing", title: "Credits Owing", enabled: false },
-    { id: "supplier-statement", title: "Supplier Statement", enabled: false },
-    { id: "payment-plan", title: "Payment Plan", enabled: false },
-    { id: "deductions", title: "Deductions", enabled: false },
-    { id: "banking-recon", title: "Banking Recon", enabled: false },
-  ];
-
   const period = periodFromParts(year, month);
   const currentMonthRange = useMemo(() => monthRange(year, month), [year, month]);
+  const currentMonthMondays = useMemo(() => mondaysInMonth(year, month), [year, month]);
+  const selectedTab =
+    isAccountPaymentsView && ["invoices", "add", "recurring"].includes(activeTab)
+      ? activeTab
+      : initialTab;
 
   const loadPayments = useCallback(async () => {
     setLoading(true);
@@ -183,21 +284,90 @@ export default function PaymentsPage() {
       .eq("store_name", selectedStore)
       .eq("is_recurring", true)
       .order("supplier_name", { ascending: true });
+    const customerPaymentsQuery = supabase
+      .from("customer_account_payments")
+      .select("*")
+      .eq("store_name", selectedStore)
+      .eq("month_year", period)
+      .order("created_at", { ascending: true });
+    const deductionsQuery = supabase
+      .from("staff_deductions")
+      .select("*")
+      .eq("store_name", selectedStore)
+      .lte("week_starting", currentMonthRange.end)
+      .order("week_starting", { ascending: true })
+      .order("created_at", { ascending: true });
 
-    const [invoicesRes, recurringRes] = await Promise.all([invoicesQuery, recurringQuery]);
+    const [invoicesRes, recurringRes, customerPaymentsRes, deductionsRes] = await Promise.all([
+      invoicesQuery,
+      recurringQuery,
+      customerPaymentsQuery,
+      deductionsQuery,
+    ]);
 
-    if (invoicesRes.error || recurringRes.error) {
-      setError(invoicesRes.error?.message || recurringRes.error?.message || "Failed to load payments.");
+    if (invoicesRes.error || recurringRes.error || customerPaymentsRes.error || deductionsRes.error) {
+      setError(
+        invoicesRes.error?.message ||
+          recurringRes.error?.message ||
+          customerPaymentsRes.error?.message ||
+          deductionsRes.error?.message ||
+          "Failed to load payments."
+      );
       setDbInvoices([]);
       setRecurring([]);
+      setCustomerPayments([]);
+      setStaffDeductions([]);
       setLoading(false);
       return;
     }
 
+    let normalizedDeductions = (deductionsRes.data || []).map(normalizeStaffDeduction);
+    const firstCurrentWeek = currentMonthMondays[0];
+    if (firstCurrentWeek) {
+      const previousRows = normalizedDeductions.filter((row) => row.weekStarting < currentMonthRange.start);
+      const { balanceByName } = buildDeductionRunningState(previousRows);
+      const carryRows = Array.from(balanceByName.values())
+        .filter((item) => item.balance > 0)
+        .flatMap((item) => {
+          const nameKey = normalizeDeductionName(item.name);
+          return currentMonthMondays
+            .filter(
+              (week) =>
+                !normalizedDeductions.some(
+                  (row) => row.weekStarting === week && normalizeDeductionName(row.staffName) === nameKey
+                )
+            )
+            .map((week_starting) => ({
+              store_name: selectedStore,
+              week_starting,
+              staff_name: item.name,
+              due_amount: week_starting === firstCurrentWeek ? item.balance : null,
+              payment_amount: week_starting === firstCurrentWeek && item.paymentValue ? item.paymentValue : null,
+            }));
+        });
+
+      if (carryRows.length) {
+        const { data: insertedCarryRows, error: carryError } = await supabase
+          .from("staff_deductions")
+          .insert(carryRows)
+          .select("*");
+        if (carryError) {
+          alert(carryError.message || "Failed to create carry-over deduction rows.");
+        } else {
+          normalizedDeductions = [
+            ...normalizedDeductions,
+            ...(insertedCarryRows || []).map(normalizeStaffDeduction),
+          ];
+        }
+      }
+    }
+
     setDbInvoices((invoicesRes.data || []).map(normalizeInvoice));
     setRecurring((recurringRes.data || []).map(normalizeRecurring));
+    setCustomerPayments((customerPaymentsRes.data || []).map(normalizeCustomerPayment));
+    setStaffDeductions(sortDeductionRows(normalizedDeductions));
     setLoading(false);
-  }, [selectedStore, currentMonthRange.end, currentMonthRange.start]);
+  }, [selectedStore, currentMonthRange.end, currentMonthRange.start, currentMonthMondays, period]);
 
   useEffect(() => {
     loadPayments();
@@ -324,6 +494,22 @@ export default function PaymentsPage() {
 
     return buckets;
   }, [dbInvoices, today]);
+
+  const deductionRunningState = useMemo(
+    () => buildDeductionRunningState(staffDeductions),
+    [staffDeductions]
+  );
+  const deductionDueById = deductionRunningState.dueById;
+  const deductionPaymentById = deductionRunningState.paymentById;
+
+  const deductionGroups = useMemo(() => {
+    return currentMonthMondays.map((weekStarting) => {
+      const rows = staffDeductions.filter((row) => row.weekStarting === weekStarting);
+      const totalDue = rows.reduce((sum, row) => sum + (deductionDueById.get(row.id)?.value || 0), 0);
+      const totalPaid = rows.reduce((sum, row) => sum + (deductionPaymentById.get(row.id)?.value || 0), 0);
+      return { weekStarting, rows, totalDue, totalPaid };
+    });
+  }, [currentMonthMondays, deductionDueById, deductionPaymentById, staffDeductions]);
 
   const openEditInvoice = (invoice) => {
     setEditingInvoiceId(invoice.id);
@@ -462,6 +648,223 @@ export default function PaymentsPage() {
     await loadPayments();
   };
 
+  const customerPaymentPayload = (row) => {
+    const amountText = String(row.amountPaid || "").trim();
+    const amount = amountText ? Number(amountText) : NaN;
+    return {
+      store_name: selectedStore,
+      month_year: period,
+      account_name: row.accountName.trim() || null,
+      amount_paid: Number.isFinite(amount) ? amount : null,
+      date_paid: row.datePaid || null,
+      recorded_by: row.recordedBy.trim() || null,
+      schedule_date: row.scheduleDate || null,
+      updated_at: new Date().toISOString(),
+    };
+  };
+
+  const addCustomerPaymentRow = async () => {
+    const { data, error: insertError } = await supabase
+      .from("customer_account_payments")
+      .insert({ store_name: selectedStore, month_year: period })
+      .select("*")
+      .single();
+
+    if (insertError) {
+      alert(insertError.message || "Failed to add schedule row.");
+      return;
+    }
+    setCustomerPayments((prev) => [...prev, normalizeCustomerPayment(data)]);
+  };
+
+  const updateCustomerPayment = (id, field, value) => {
+    setCustomerPayments((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const saveCustomerPayment = async (row) => {
+    const { error: updateError } = await supabase
+      .from("customer_account_payments")
+      .update(customerPaymentPayload(row))
+      .eq("id", row.id)
+      .eq("store_name", selectedStore)
+      .eq("month_year", period);
+
+    if (updateError) {
+      alert(updateError.message || "Failed to save schedule row.");
+      await loadPayments();
+    }
+  };
+
+  const deleteCustomerPayment = async (id) => {
+    if (!window.confirm("Delete this schedule row?")) return;
+    const { error: deleteError } = await supabase
+      .from("customer_account_payments")
+      .delete()
+      .eq("id", id)
+      .eq("store_name", selectedStore)
+      .eq("month_year", period);
+
+    if (deleteError) {
+      alert(deleteError.message || "Failed to delete schedule row.");
+      return;
+    }
+    setCustomerPayments((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const deductionPayload = (row) => ({
+    store_name: selectedStore,
+    week_starting: row.weekStarting,
+    staff_name: row.staffName.trim() || null,
+    due_amount: deductionDueById.get(row.id)?.isCarried
+      ? deductionDueById.get(row.id).value
+      : moneyInputToValue(row.dueAmount),
+    payment_amount: deductionPaymentById.get(row.id)?.isCarried
+      ? deductionPaymentById.get(row.id).value
+      : moneyInputToValue(row.paymentAmount),
+    is_paid: Boolean(row.isPaid),
+    comments: row.comments.trim() || null,
+    updated_at: new Date().toISOString(),
+  });
+
+  const addDeductionRow = async (weekStarting) => {
+    if (!weekStarting) {
+      alert("Pick a week starting date first.");
+      return;
+    }
+    if (weekStarting < currentMonthRange.start || weekStarting > currentMonthRange.end) {
+      alert(`Pick a week starting date inside ${periodLabel(year, month)}.`);
+      return;
+    }
+
+    const { data, error: insertError } = await supabase
+      .from("staff_deductions")
+      .insert({ store_name: selectedStore, week_starting: weekStarting })
+      .select("*")
+      .single();
+
+    if (insertError) {
+      alert(insertError.message || "Failed to add deduction row.");
+      return;
+    }
+    setStaffDeductions((prev) =>
+      sortDeductionRows([...prev, normalizeStaffDeduction(data)])
+    );
+  };
+
+  const updateDeduction = (id, field, value) => {
+    setStaffDeductions((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const saveDeduction = async (row) => {
+    const { error: updateError } = await supabase
+      .from("staff_deductions")
+      .update(deductionPayload(row))
+      .eq("id", row.id)
+      .eq("store_name", selectedStore);
+
+    if (updateError) {
+      alert(updateError.message || "Failed to save deduction row.");
+      await loadPayments();
+    }
+  };
+
+  const ensureFutureDeductionRows = async (row) => {
+    const name = row.staffName.trim();
+    const nameKey = normalizeDeductionName(name);
+    if (!nameKey) return;
+    const futureWeeks = currentMonthMondays.filter((week) => week > row.weekStarting);
+    const missingWeeks = futureWeeks.filter(
+      (week) =>
+        !staffDeductions.some(
+          (item) =>
+            normalizeDeductionName(item.staffName) === nameKey &&
+            item.weekStarting === week &&
+            item.id !== row.id
+        )
+    );
+    if (!missingWeeks.length) return;
+
+    const rows = missingWeeks.map((week_starting) => ({
+      store_name: selectedStore,
+      week_starting,
+      staff_name: name,
+    }));
+
+    const { data, error: insertError } = await supabase.from("staff_deductions").insert(rows).select("*");
+    if (insertError) {
+      alert(insertError.message || "Failed to create carry-over rows.");
+      return;
+    }
+    setStaffDeductions((prev) =>
+      sortDeductionRows([...prev, ...(data || []).map(normalizeStaffDeduction)])
+    );
+  };
+
+  const updateDeductionName = async (row, staffName) => {
+    const name = staffName.trim();
+    const nameKey = normalizeDeductionName(name);
+    if (
+      nameKey &&
+      staffDeductions.some(
+        (item) =>
+          item.id !== row.id &&
+          item.weekStarting === row.weekStarting &&
+          normalizeDeductionName(item.staffName) === nameKey
+      )
+    ) {
+      alert("This person already has a deduction row for this week.");
+      return;
+    }
+    const nextRow = {
+      ...row,
+      staffName: name,
+    };
+    setStaffDeductions((prev) =>
+      prev.map((item) => (item.id === row.id ? { ...item, staffName: name } : item))
+    );
+    await saveDeduction(nextRow);
+    await ensureFutureDeductionRows(nextRow);
+  };
+
+  const toggleDeductionPaid = async (row) => {
+    const nextRow = { ...row, isPaid: !row.isPaid };
+    setStaffDeductions((prev) =>
+      prev.map((item) => (item.id === row.id ? { ...item, isPaid: nextRow.isPaid } : item))
+    );
+
+    const { error: updateError } = await supabase
+      .from("staff_deductions")
+      .update({ is_paid: nextRow.isPaid, updated_at: new Date().toISOString() })
+      .eq("id", row.id)
+      .eq("store_name", selectedStore);
+
+    if (updateError) {
+      alert(updateError.message || "Failed to update paid status.");
+      setStaffDeductions((prev) =>
+        prev.map((item) => (item.id === row.id ? { ...item, isPaid: row.isPaid } : item))
+      );
+    }
+  };
+
+  const deleteDeduction = async (id) => {
+    if (!window.confirm("Delete this deduction row?")) return;
+    const { error: deleteError } = await supabase
+      .from("staff_deductions")
+      .delete()
+      .eq("id", id)
+      .eq("store_name", selectedStore);
+
+    if (deleteError) {
+      alert(deleteError.message || "Failed to delete deduction row.");
+      return;
+    }
+    setStaffDeductions((prev) => prev.filter((row) => row.id !== id));
+  };
+
   const onPrevMonth = () => {
     if (month === 0) {
       setMonth(11);
@@ -537,90 +940,29 @@ export default function PaymentsPage() {
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       ) : null}
 
-      <div>
-        <div
-          className={`grid grid-cols-1 gap-6 transition-all duration-300 ease-out ${
-            view === "planner"
-              ? "pointer-events-none hidden opacity-0"
-              : "translate-x-0 opacity-100"
-          }`}
-        >
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-5">
-              <h3 className="text-lg font-semibold text-slate-900">Payments Controls Hub</h3>
-              <p className="text-sm text-slate-500">Select a module to open financial workflows.</p>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {adminCards.map((card) => (
-                <button
-                  key={card.id}
-                  type="button"
-                  title={card.enabled ? card.title : "Coming Soon"}
-                  onClick={() => {
-                    if (card.enabled) setView("planner");
-                  }}
-                  className={`group relative rounded-2xl border bg-white p-5 text-left shadow-sm transition ${
-                    card.enabled
-                      ? "border-slate-200 hover:-translate-y-0.5 hover:shadow-md"
-                      : "cursor-not-allowed border-slate-200/80 opacity-80"
-                  }`}
-                >
-                  <p
-                    className={`text-base font-semibold ${
-                      card.enabled ? "text-[#ff6e00]" : "text-slate-400"
-                    }`}
-                  >
-                    {card.title}
+      <div className="space-y-6">
+            {isAccountPaymentsView ? (
+              <div className="flex justify-end">
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-right shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Unpaid</p>
+                  <p className="text-lg font-bold text-[#a32d2d]">
+                    R{" "}
+                    {monthlyTotalDue.toLocaleString("en-ZA", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
                   </p>
-                  <p className={`mt-2 text-xs ${card.enabled ? "text-slate-500" : "text-slate-400"}`}>
-                    {card.enabled ? "Open P-Planner workflow" : "Module planned for roadmap"}
-                  </p>
-                  {!card.enabled ? (
-                    <span className="absolute right-4 top-4 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                      Coming Soon
-                    </span>
-                  ) : null}
-                </button>
-              ))}
+                </div>
             </div>
-          </section>
-        </div>
+            ) : null}
 
-        <div
-          className={`transition-all duration-300 ease-out ${
-            view === "planner"
-              ? "translate-x-0 opacity-100"
-              : "pointer-events-none hidden translate-x-4 opacity-0"
-          }`}
-        >
-          <div className="space-y-6">
-            <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <button
-                type="button"
-                onClick={() => setView("hub")}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                ← Back to Admin Controls
-              </button>
-              <div className="rounded-xl bg-slate-50 px-4 py-3 text-right">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Unpaid</p>
-                <p className="text-lg font-bold text-[#a32d2d]">
-                  R{" "}
-                  {monthlyTotalDue.toLocaleString("en-ZA", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </p>
-              </div>
-            </div>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-xl shadow-slate-200/50">
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Period</span>
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Period</span>
                 <select
                   value={year}
                   onChange={(event) => setYear(Number(event.target.value))}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-[#ff6e00]"
+                  className="rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-2 text-sm font-bold text-slate-800 shadow-sm outline-none transition hover:bg-white focus:border-[#ff6e00]/40 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
                 >
                   {Array.from({ length: 10 }, (_, index) => now.getFullYear() - 3 + index).map((y) => (
                     <option key={y} value={y}>
@@ -631,7 +973,7 @@ export default function PaymentsPage() {
                 <select
                   value={month}
                   onChange={(event) => setMonth(Number(event.target.value))}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-[#ff6e00]"
+                  className="rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-2 text-sm font-bold text-slate-800 shadow-sm outline-none transition hover:bg-white focus:border-[#ff6e00]/40 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
                 >
                   {MONTHS.map((name, index) => (
                     <option key={name} value={index}>
@@ -639,48 +981,52 @@ export default function PaymentsPage() {
                     </option>
                   ))}
                 </select>
-                <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700">
+                <span className="rounded-xl border border-slate-100 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm">
                   {periodLabel(year, month)}
                 </span>
                 <button
                   type="button"
                   onClick={onPrevMonth}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="rounded-xl border border-slate-100 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#ff6e00]/30 hover:bg-[#fff7ed]"
                 >
                   Prev
                 </button>
                 <button
                   type="button"
                   onClick={onNextMonth}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className="rounded-xl border border-slate-100 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#ff6e00]/30 hover:bg-[#fff7ed]"
                 >
                   Next
                 </button>
-                <span className="text-xs text-slate-500">{periodInvoices.length} invoice(s)</span>
+                {isAccountPaymentsView ? (
+                  <span className="text-xs text-slate-500">{periodInvoices.length} invoice(s)</span>
+                ) : null}
               </div>
             </section>
 
-            <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-        <Tabs.List className="inline-flex w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-          <Tabs.Trigger
-            value="invoices"
-            className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 data-[state=active]:bg-[#ff6e00] data-[state=active]:text-white"
-          >
-            Invoices
-          </Tabs.Trigger>
-          <Tabs.Trigger
-            value="add"
-            className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 data-[state=active]:bg-[#ff6e00] data-[state=active]:text-white"
-          >
-            + Add Invoice
-          </Tabs.Trigger>
-          <Tabs.Trigger
-            value="recurring"
-            className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 data-[state=active]:bg-[#ff6e00] data-[state=active]:text-white"
-          >
-            Recurring
-          </Tabs.Trigger>
-        </Tabs.List>
+            <Tabs.Root value={selectedTab} onValueChange={setActiveTab} className="space-y-5">
+        {isAccountPaymentsView ? (
+          <Tabs.List className="inline-flex w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+            <Tabs.Trigger
+              value="invoices"
+              className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 data-[state=active]:bg-[#ff6e00] data-[state=active]:text-white"
+            >
+              Invoices
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="add"
+              className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 data-[state=active]:bg-[#ff6e00] data-[state=active]:text-white"
+            >
+              + Add Invoice
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="recurring"
+              className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 data-[state=active]:bg-[#ff6e00] data-[state=active]:text-white"
+            >
+              Recurring
+            </Tabs.Trigger>
+          </Tabs.List>
+        ) : null}
 
         <Tabs.Content value="invoices">
           <div className="space-y-4">
@@ -889,6 +1235,330 @@ export default function PaymentsPage() {
             </div>
             </section>
           </div>
+        </Tabs.Content>
+
+        <Tabs.Content value="customer-accounts">
+          <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl shadow-slate-200/50">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-white px-6 py-5">
+              <h3 className="text-base font-extrabold text-slate-950">
+                Monthly Customer Accounts Payment Schedule for {periodLabel(year, month)}
+              </h3>
+              <button
+                type="button"
+                onClick={addCustomerPaymentRow}
+                className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-bold text-white shadow-lg shadow-orange-200/60 transition hover:brightness-95"
+              >
+                + Add row
+              </button>
+            </div>
+            <div className="overflow-x-auto bg-white">
+              <table className="w-full min-w-[900px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/50 text-left text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                    <th className="px-4 py-3">Account Name</th>
+                    <th className="px-4 py-3 text-right">
+                      Amount Paid
+                    </th>
+                    <th className="px-4 py-3">Date Paid</th>
+                    <th className="px-4 py-3">Recorded By</th>
+                    <th className="px-4 py-3">Date</th>
+                    <th className="w-12 px-3 py-3" aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                        Loading customer account schedule...
+                      </td>
+                    </tr>
+                  ) : customerPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                        No customer account payments for {periodLabel(year, month)} yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    customerPayments.map((row, index) => (
+                      <tr
+                        key={row.id}
+                        className={`group border-t border-slate-100 transition hover:bg-slate-50/80 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/30"}`}
+                      >
+                        <td className="px-3 py-2">
+                          <input
+                            value={row.accountName}
+                            onChange={(event) => updateCustomerPayment(row.id, "accountName", event.target.value)}
+                            onBlur={(event) =>
+                              saveCustomerPayment({ ...row, accountName: event.currentTarget.value })
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") event.currentTarget.blur();
+                            }}
+                            className="w-full border-0 border-b border-slate-100 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none transition focus:rounded-lg focus:border-[#ff6e00]/30 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={row.amountPaid}
+                            onChange={(event) => updateCustomerPayment(row.id, "amountPaid", event.target.value)}
+                            onBlur={(event) =>
+                              saveCustomerPayment({ ...row, amountPaid: event.currentTarget.value })
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") event.currentTarget.blur();
+                            }}
+                            className="w-full border-0 border-b border-slate-100 bg-transparent px-3 py-2 text-right font-mono text-sm font-semibold text-slate-900 outline-none transition focus:rounded-lg focus:border-[#ff6e00]/30 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="date"
+                            value={row.datePaid}
+                            onChange={(event) => updateCustomerPayment(row.id, "datePaid", event.target.value)}
+                            onBlur={(event) =>
+                              saveCustomerPayment({ ...row, datePaid: event.currentTarget.value })
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") event.currentTarget.blur();
+                            }}
+                            className="w-full border-0 border-b border-slate-100 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none transition focus:rounded-lg focus:border-[#ff6e00]/30 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            value={row.recordedBy}
+                            onChange={(event) => updateCustomerPayment(row.id, "recordedBy", event.target.value)}
+                            onBlur={(event) =>
+                              saveCustomerPayment({ ...row, recordedBy: event.currentTarget.value })
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") event.currentTarget.blur();
+                            }}
+                            className="w-full border-0 border-b border-slate-100 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none transition focus:rounded-lg focus:border-[#ff6e00]/30 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="date"
+                            value={row.scheduleDate}
+                            onChange={(event) => updateCustomerPayment(row.id, "scheduleDate", event.target.value)}
+                            onBlur={(event) =>
+                              saveCustomerPayment({ ...row, scheduleDate: event.currentTarget.value })
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") event.currentTarget.blur();
+                            }}
+                            className="w-full border-0 border-b border-slate-100 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none transition focus:rounded-lg focus:border-[#ff6e00]/30 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => deleteCustomerPayment(row.id)}
+                            className="inline-flex rounded-lg p-2 text-slate-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                            aria-label="Delete customer account payment row"
+                          >
+                            <Trash2 className="h-4 w-4" strokeWidth={2} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </Tabs.Content>
+
+        <Tabs.Content value="deductions">
+          <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl shadow-slate-200/50">
+            <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 bg-white px-6 py-5">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Deductions tracking template
+                </p>
+                <h3 className="mt-1 text-lg font-extrabold text-slate-950">
+                  {selectedStore} deductions for {periodLabel(year, month)}
+                </h3>
+              </div>
+              <p className="max-w-md text-right text-xs leading-relaxed text-slate-500">
+                Week blocks are generated automatically for every Monday in {periodLabel(year, month)}.
+              </p>
+            </div>
+
+            <div className="space-y-6 bg-white p-4">
+              {loading ? (
+                <div className="rounded-xl border border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500">
+                  Loading deductions...
+                </div>
+              ) : (
+                deductionGroups.map((group) => (
+                  <div key={group.weekStarting} className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[920px] border-collapse text-sm">
+                        <thead>
+                          <tr className="text-left text-white">
+                            <th colSpan={6} className="p-2">
+                              <div className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-[#311162] to-[#4a1a94] px-4 py-3 text-xs font-extrabold uppercase tracking-[0.16em] text-white shadow-lg shadow-[#311162]/20">
+                                <CalendarDays className="h-4 w-4 drop-shadow-sm" strokeWidth={2.2} />
+                                <span className="drop-shadow-sm">WK STARTING - {formatDate(group.weekStarting)}</span>
+                              </div>
+                            </th>
+                          </tr>
+                          <tr className="border-b border-slate-100 bg-slate-50/50 text-left text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                            <th className="px-4 py-3">
+                              Staff Name
+                            </th>
+                            <th className="px-4 py-3 text-right">
+                              Due (R)
+                            </th>
+                            <th className="px-4 py-3 text-right">
+                              Payment (R)
+                            </th>
+                            <th className="px-4 py-3 text-center">
+                              Paid
+                            </th>
+                            <th className="px-4 py-3">
+                              Comments
+                            </th>
+                            <th className="w-12 px-3 py-3" aria-label="Actions" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.rows.map((row, index) => {
+                            const dueMeta = deductionDueById.get(row.id);
+                            const dueValue = dueMeta?.text ?? row.dueAmount;
+                            const dueIsCarried = Boolean(row.staffName.trim() && dueMeta?.isCarried);
+                            const paymentMeta = deductionPaymentById.get(row.id);
+                            const paymentValue = paymentMeta?.text ?? row.paymentAmount;
+                            return (
+                            <tr
+                              key={row.id}
+                              className={`group border-t border-slate-100 transition hover:bg-slate-50/80 ${index % 2 === 0 ? "bg-white" : "bg-slate-50/30"}`}
+                            >
+                              <td className="px-3 py-2">
+                                <input
+                                  value={row.staffName}
+                                  onChange={(event) => updateDeduction(row.id, "staffName", event.target.value)}
+                                  onBlur={(event) => updateDeductionName(row, event.currentTarget.value)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") event.currentTarget.blur();
+                                  }}
+                                  placeholder="Name"
+                                  className="w-full border-0 border-b border-slate-100 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none transition focus:rounded-lg focus:border-[#ff6e00]/30 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={dueValue}
+                                  readOnly={dueIsCarried}
+                                  title={dueIsCarried ? "Carried over from the previous week" : "Initial due amount"}
+                                  onChange={(event) => {
+                                    if (!dueIsCarried) updateDeduction(row.id, "dueAmount", event.target.value);
+                                  }}
+                                  onBlur={(event) =>
+                                    !dueIsCarried && saveDeduction({ ...row, dueAmount: event.currentTarget.value })
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") event.currentTarget.blur();
+                                  }}
+                                  className={`w-full border-0 border-b px-3 py-2 text-right font-mono text-sm font-semibold outline-none transition focus:rounded-lg focus:border-[#ff6e00]/30 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10 ${
+                                    dueIsCarried
+                                      ? "border-slate-100 bg-slate-50/70 text-slate-700"
+                                      : "border-slate-100 bg-transparent text-slate-900"
+                                  }`}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={paymentValue}
+                                  onChange={(event) => updateDeduction(row.id, "paymentAmount", event.target.value)}
+                                  onBlur={(event) =>
+                                    saveDeduction({ ...row, paymentAmount: event.currentTarget.value })
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") event.currentTarget.blur();
+                                  }}
+                                  className="w-full border-0 border-b border-slate-100 bg-transparent px-3 py-2 text-right font-mono text-sm font-semibold text-slate-900 outline-none transition focus:rounded-lg focus:border-[#ff6e00]/30 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <label className="inline-flex cursor-pointer items-center justify-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={row.isPaid}
+                                    onChange={() => toggleDeductionPaid(row)}
+                                    className="peer sr-only"
+                                    aria-label={`Paid status for ${row.staffName || "deduction row"}`}
+                                  />
+                                  <span className="inline-flex min-w-[76px] items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-widest text-slate-400 shadow-sm transition peer-checked:border-emerald-200 peer-checked:bg-emerald-50 peer-checked:text-emerald-700 peer-focus:ring-4 peer-focus:ring-[#ff6e00]/10">
+                                    {row.isPaid ? "Paid" : "Open"}
+                                  </span>
+                                </label>
+                              </td>
+                              <td className="px-3 py-2">
+                                <input
+                                  value={row.comments}
+                                  onChange={(event) => updateDeduction(row.id, "comments", event.target.value)}
+                                  onBlur={(event) =>
+                                    saveDeduction({ ...row, comments: event.currentTarget.value })
+                                  }
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter") event.currentTarget.blur();
+                                  }}
+                                  className="w-full border-0 border-b border-slate-100 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none transition focus:rounded-lg focus:border-[#ff6e00]/30 focus:bg-white focus:ring-4 focus:ring-[#ff6e00]/10"
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => deleteDeduction(row.id)}
+                                  className="inline-flex rounded-lg p-2 text-slate-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                                  aria-label="Delete deduction row"
+                                >
+                                  <Trash2 className="h-4 w-4" strokeWidth={2} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                          })}
+                          <tr className="border-t border-slate-100 bg-slate-50/50">
+                            <td className="px-4 py-2 text-xs font-extrabold uppercase tracking-wide text-slate-700">
+                              Week subtotal
+                            </td>
+                            <td className="px-4 py-2 text-right font-mono text-sm font-extrabold text-slate-900">
+                              R {group.totalDue.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-4 py-2 text-right font-mono text-sm font-extrabold text-slate-900">
+                              R {group.totalPaid.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td colSpan={3} className="px-4 py-2 text-right">
+                              <button
+                                type="button"
+                                onClick={() => addDeductionRow(group.weekStarting)}
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+                              >
+                                + Add row to week
+                              </button>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
         </Tabs.Content>
 
         <Tabs.Content value="add">
@@ -1126,9 +1796,7 @@ export default function PaymentsPage() {
             </div>
           </section>
         </Tabs.Content>
-            </Tabs.Root>
-          </div>
-        </div>
+      </Tabs.Root>
       </div>
     </div>
   );

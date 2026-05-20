@@ -10,7 +10,9 @@ export default function LegacyLinkCard({ title, description, buttonLabel, href, 
   const body = (
     <>
       <h2 className="text-[0.9rem] font-semibold text-slate-900">{title}</h2>
-      <p className="flex-1 text-[0.8rem] leading-snug text-slate-600">{description}</p>
+      {description ? (
+        <p className="flex-1 text-[0.8rem] leading-snug text-slate-600">{description}</p>
+      ) : null}
       {href && !disabled ? (
         external ? (
           <a href={href} target="_blank" rel="noopener noreferrer" className={BTN}>

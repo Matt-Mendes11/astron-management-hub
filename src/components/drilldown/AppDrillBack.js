@@ -9,7 +9,7 @@ export default function AppDrillBack({ backHref }) {
     <div className="mb-4 flex justify-end">
       <Link
         href={backHref}
-        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-[#f8fafc] px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-100"
+        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#ff6e00]/40 hover:bg-[#fff7ed] hover:text-[#ff6e00]"
       >
         ← Back
       </Link>

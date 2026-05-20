@@ -18,7 +18,6 @@ export default async function StoreRoutinesPage({ params }) {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
         <LegacyLinkCard
           title="Site assessments & checklists"
-          description="Store-specific daily checklists with template manager, overdue alerts, and CSA assessments."
           buttonLabel="Open assessments"
           href={`/site-assessments?${q}&return=${ret}`}
         />

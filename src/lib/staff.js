@@ -130,3 +130,41 @@ export async function uploadStaffDocument(supabase, { staffId, storeName, file }
 
   return { ok: true };
 }
+
+/** Remove staff profile, vault files, and unlink assessments. */
+export async function deleteStaffMember(supabase, { staffId, storeName }) {
+  if (!staffId || !storeName) {
+    return { ok: false, error: "Missing staff member or store." };
+  }
+
+  const { data: docs, error: docsErr } = await supabase
+    .from("staff_documents")
+    .select("storage_path")
+    .eq("staff_id", staffId);
+
+  if (docsErr && !isStaffDocumentsSchemaError(docsErr.message)) {
+    return { ok: false, error: docsErr.message || "Could not load documents." };
+  }
+
+  const paths = (docs || []).map((d) => d.storage_path).filter(Boolean);
+  if (paths.length) {
+    const { error: storageErr } = await supabase.storage.from(STAFF_DOCUMENT_BUCKET).remove(paths);
+    if (storageErr) {
+      return { ok: false, error: storageErr.message || "Could not remove uploaded files." };
+    }
+  }
+
+  await supabase.from("site_assessments").update({ staff_id: null }).eq("staff_id", staffId);
+
+  const { error: delErr } = await supabase
+    .from("staff_profiles")
+    .delete()
+    .eq("id", staffId)
+    .eq("store_name", storeName);
+
+  if (delErr) {
+    return { ok: false, error: delErr.message || "Could not delete staff member." };
+  }
+
+  return { ok: true };
+}

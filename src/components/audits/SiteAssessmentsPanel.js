@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { ClipboardList, Plus, Settings2, ShieldAlert, Trash2 } from "lucide-react";
 import {
   ASSESSMENT_TYPE_DB_VALUE,
@@ -224,7 +225,6 @@ export default function SiteAssessmentsPanel({ storeName }) {
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pass rate</p>
           <p className="mt-2 text-2xl font-bold text-[#ff6a00]">{metrics.passRate}%</p>
-          <p className="mt-1 text-[10px] text-slate-400">Audits scoring above 75%</p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Audits ({storeName})</p>
@@ -266,10 +266,6 @@ export default function SiteAssessmentsPanel({ storeName }) {
             <div className="border-b border-orange-100 bg-orange-50/50 px-4 py-3">
               <p className="text-sm font-semibold text-slate-900">
                 {ASSESSMENT_TYPES[assessmentType]?.label} — question template
-              </p>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {storeName} only · {activeTemplates.length} active
-                {templatesLoading ? " · loading…" : ""}
               </p>
             </div>
             <div className="divide-y divide-slate-100 bg-white">
@@ -447,15 +443,13 @@ export default function SiteAssessmentsPanel({ storeName }) {
         </div>
       </section>
 
-      <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-        Past audits and reports are in the{" "}
-        <a
+      <p className="text-center text-sm text-slate-600">
+        <Link
           href={`/operations-team-hub?store=${encodeURIComponent(storeName)}`}
           className="font-semibold text-[#ff6a00] hover:underline"
         >
-          Operations Team Hub
-        </a>
-        .
+          Check assessment history in Operations Team Hub →
+        </Link>
       </p>
     </div>
   );

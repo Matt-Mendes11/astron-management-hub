@@ -15,8 +15,9 @@ import {
   STAFF_DOCUMENTS_SETUP_HINT,
   trainingStatusStyles,
   uploadStaffDocument,
+  deleteStaffMember,
 } from "../../lib/staff";
-import { Search, UserPlus } from "lucide-react";
+import { Search, Trash2, UserPlus } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,7 @@ export default function StaffManagementPage() {
   const [addForm, setAddForm] = useState(() => defaultStaffForm());
   const [addIdFile, setAddIdFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
 
   const loadStaff = useCallback(async () => {
     setLoading(true);
@@ -179,6 +181,25 @@ export default function StaffManagementPage() {
     setAddOpen(false);
     setAddForm(defaultStaffForm());
     setAddIdFile(null);
+    await loadStaff();
+  };
+
+  const removeMember = async (row) => {
+    const name = row.full_name || "this team member";
+    if (
+      !window.confirm(
+        `Delete ${name} from ${selectedStore}? Their profile and uploaded documents will be removed. Past assessments will stay but will no longer be linked to this profile.`
+      )
+    ) {
+      return;
+    }
+    setDeletingId(row.id);
+    const result = await deleteStaffMember(supabase, { staffId: row.id, storeName: selectedStore });
+    setDeletingId("");
+    if (!result.ok) {
+      alert(result.error || "Could not delete staff member.");
+      return;
+    }
     await loadStaff();
   };
 
@@ -328,16 +349,27 @@ export default function StaffManagementPage() {
                       </span>
                     </td>
                     <td className="px-5 py-4 text-right">
-                      <Link
-                        href={`/staff-management/${row.id}?${queryStore}${
-                          searchParams.get("return")
-                            ? `&return=${encodeURIComponent(searchParams.get("return"))}`
-                            : ""
-                        }`}
-                        className="inline-flex rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-[#311162]/30 hover:bg-slate-50"
-                      >
-                        View file
-                      </Link>
+                      <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                        <Link
+                          href={`/staff-management/${row.id}?${queryStore}${
+                            searchParams.get("return")
+                              ? `&return=${encodeURIComponent(searchParams.get("return"))}`
+                              : ""
+                          }`}
+                          className="inline-flex rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-[#311162]/30 hover:bg-slate-50"
+                        >
+                          View file
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => removeMember(row)}
+                          disabled={deletingId === row.id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                          {deletingId === row.id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

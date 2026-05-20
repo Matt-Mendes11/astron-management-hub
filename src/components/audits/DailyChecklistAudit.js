@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { AlertTriangle, Plus, Settings2, Trash2, X } from "lucide-react";
 import {
   CHECKLIST_CATEGORIES,
@@ -17,12 +18,10 @@ import {
   fetchActiveTemplates,
   fetchAllTemplates,
   fetchChecklistHistory,
-  fetchChecklistResponses,
   seedTemplatesIfEmpty,
   submitChecklistCompletion,
   syncDailyChecklistLifecycle,
 } from "../../lib/dailyChecklistService";
-import { printChecklistReport } from "../../lib/checklistPrint";
 import { supabase } from "../../lib/supabaseBrowser";
 
 const ORANGE_BTN =
@@ -146,11 +145,11 @@ export default function DailyChecklistAudit({ storeName }) {
       ? String(yesterdayRow.status)
       : yesterdayOverdue
         ? CHECKLIST_STATUSES.OVERDUE
-        : "â€”";
+        : "-";
 
     return {
       totalQuestions: activeTemplates.length,
-      lastScore: lastScored?.score != null ? `${Math.round(Number(lastScored.score))}%` : "â€”",
+      lastScore: lastScored?.score != null ? `${Math.round(Number(lastScored.score))}%` : "-",
       yesterdayStatus,
     };
   }, [activeTemplates.length, history, yesterdayOverdue]);
@@ -254,15 +253,6 @@ export default function DailyChecklistAudit({ storeName }) {
     }
   };
 
-  const handleViewPdf = async (row) => {
-    const { data: responses, error: rErr } = await fetchChecklistResponses(supabase, row.id);
-    if (rErr || !responses?.length) {
-      alert(rErr?.message || "No response data available.");
-      return;
-    }
-    printChecklistReport({ checklist: row, responses, storeName });
-  };
-
   if (schemaMissing) {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
@@ -292,17 +282,16 @@ export default function DailyChecklistAudit({ storeName }) {
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="text-sm font-semibold text-slate-900">Daily audit status</h3>
-          <p className="mt-0.5 text-xs text-slate-500">{formatCheckDate(todayDateKey())}</p>
         </div>
 
         <div className="p-5 space-y-4">
           {loading ? (
-            <p className="text-sm text-slate-500">Loadingâ€¦</p>
+            <p className="text-sm text-slate-500">Loading...</p>
           ) : (
             <>
               {isTodayPending && canFillToday ? (
                 <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-[#9a3412]">
-                  ðŸ”” Today&apos;s checklist is ready to be completed.
+                  Today&apos;s checklist is ready to be completed.
                 </div>
               ) : isTodayComplete ? (
                 <p className="text-sm text-slate-600">
@@ -310,7 +299,7 @@ export default function DailyChecklistAudit({ storeName }) {
                   {todayChecklist?.score != null ? (
                     <span className="font-semibold text-slate-900">
                       {" "}
-                      Â· Score {Math.round(Number(todayChecklist.score))}%
+                      - Score {Math.round(Number(todayChecklist.score))}%
                     </span>
                   ) : null}
                   .
@@ -358,10 +347,6 @@ export default function DailyChecklistAudit({ storeName }) {
         <section className="rounded-lg border border-orange-200 bg-white shadow-sm">
           <div className="border-b border-orange-100 bg-orange-50/50 px-5 py-4">
             <h3 className="text-sm font-semibold text-slate-900">Store checklist template</h3>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Questions saved to <span className="font-medium">{storeName}</span> only Â·{" "}
-              {activeTemplates.length} active
-            </p>
           </div>
 
           <div className="divide-y divide-slate-100">
@@ -409,7 +394,7 @@ export default function DailyChecklistAudit({ storeName }) {
               <input
                 value={newQuestion.text}
                 onChange={(e) => setNewQuestion((f) => ({ ...f, text: e.target.value }))}
-                placeholder="New checklist questionâ€¦"
+                placeholder="New checklist question..."
                 className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
               />
               <button type="button" onClick={addTemplateQuestion} className={ORANGE_BTN}>
@@ -421,65 +406,14 @@ export default function DailyChecklistAudit({ storeName }) {
         </section>
       ) : null}
 
-      {/* Document history */}
-      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <h3 className="text-sm font-semibold text-slate-900">Document history</h3>
-          <p className="mt-0.5 text-xs text-slate-500">Completed audit file log Â· {storeName}</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3">Completed by</th>
-                <th className="px-5 py-3">Score</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3 text-right">Report</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {history.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-slate-500">
-                    No records yet.
-                  </td>
-                </tr>
-              ) : (
-                history.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50/80">
-                    <td className="px-5 py-3 font-medium text-slate-900">{formatCheckDate(row.check_date)}</td>
-                    <td className="px-5 py-3 text-slate-600">{row.completed_by || "â€”"}</td>
-                    <td className="px-5 py-3 tabular-nums font-medium text-slate-900">
-                      {row.score != null ? `${Math.round(Number(row.score))}%` : "â€”"}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1 ${statusBadgeClass(row.status)}`}
-                      >
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      {String(row.status).toUpperCase() === CHECKLIST_STATUSES.COMPLETED ? (
-                        <button
-                          type="button"
-                          onClick={() => handleViewPdf(row)}
-                          className="text-xs font-semibold text-[#ff6a00] hover:underline"
-                        >
-                          ðŸ“„ View PDF
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-300">â€”</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <p className="text-center text-sm text-slate-600">
+        <Link
+          href={`/operations-team-hub?store=${encodeURIComponent(storeName)}`}
+          className="font-semibold text-[#ff6a00] hover:underline"
+        >
+          Check document history in Operations Team Hub →
+        </Link>
+      </p>
 
       {/* Fill-in: physical audit sheet */}
       {fillOpen ? (
@@ -548,7 +482,7 @@ export default function DailyChecklistAudit({ storeName }) {
                               setAnswer(q.id, { ...answers[q.id], remediationNote: e.target.value })
                             }
                             className="mt-1 w-full resize-none rounded-md border border-red-100 bg-white px-2 py-1.5 text-sm outline-none focus:border-red-300"
-                            placeholder="Describe corrective actionâ€¦"
+                            placeholder="Describe corrective action..."
                           />
                         </label>
                       </div>
@@ -566,7 +500,7 @@ export default function DailyChecklistAudit({ storeName }) {
                   Cancel
                 </button>
                 <button type="button" onClick={submitFillIn} disabled={saving} className={ORANGE_BTN}>
-                  {saving ? "Submittingâ€¦" : "Submit checklist"}
+                  {saving ? "Submitting..." : "Submit checklist"}
                 </button>
               </div>
             </div>

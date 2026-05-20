@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
 import { Megaphone } from "lucide-react";
 import AssessmentHistoryPanel from "./audits/AssessmentHistoryPanel";
+import ChecklistDocumentHistoryPanel from "./audits/ChecklistDocumentHistoryPanel";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/rest\/v1\/$/, "") || "";
@@ -530,6 +531,7 @@ export default function OperationsTeamHub() {
       ) : null}
     </section>
 
+    <ChecklistDocumentHistoryPanel storeName={selectedBranch} />
     <AssessmentHistoryPanel storeName={selectedBranch} />
     </div>
   );

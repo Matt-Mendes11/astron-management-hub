@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AppDrillBack from "../../../components/drilldown/AppDrillBack";
 import StaffDocumentVault from "../../../components/staff/StaffDocumentVault";
 import StaffProfileFormFields from "../../../components/staff/StaffProfileFormFields";
-import { formToStaffPayload, profileToForm, trainingStatusStyles } from "../../../lib/staff";
-import { Pencil, Printer } from "lucide-react";
+import { deleteStaffMember, formToStaffPayload, profileToForm, trainingStatusStyles } from "../../../lib/staff";
+import { Pencil, Printer, Trash2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +60,7 @@ function DetailRow({ label, value }) {
 }
 
 export default function StaffProfilePage() {
+  const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
   const id = params?.id;
@@ -75,6 +76,7 @@ export default function StaffProfilePage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState(() => profileToForm(null));
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const queryStore = `store=${encodeURIComponent(selectedStore)}`;
 
@@ -177,6 +179,26 @@ export default function StaffProfilePage() {
     window.print();
   };
 
+  const removeProfile = async () => {
+    if (!profile) return;
+    const name = profile.full_name || "this team member";
+    if (
+      !window.confirm(
+        `Delete ${name} from ${selectedStore}? Their profile and uploaded documents will be removed. Past assessments will stay but will no longer be linked to this profile.`
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    const result = await deleteStaffMember(supabase, { staffId: id, storeName: selectedStore });
+    setDeleting(false);
+    if (!result.ok) {
+      alert(result.error || "Could not delete staff member.");
+      return;
+    }
+    router.push(backHref);
+  };
+
   if (!id) {
     return <div className="p-6 text-slate-600">Invalid profile.</div>;
   }
@@ -224,6 +246,15 @@ export default function StaffProfilePage() {
               >
                 <Printer className="h-4 w-4" strokeWidth={2} />
                 Print employee record
+              </button>
+              <button
+                type="button"
+                onClick={removeProfile}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-600 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Trash2 className="h-4 w-4" strokeWidth={2} />
+                {deleting ? "Deleting…" : "Delete profile"}
               </button>
             </>
           ) : null}
