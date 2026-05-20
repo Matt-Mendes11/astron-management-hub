@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { BookOpen, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { labelToSlug } from "../lib/stores";
 import {
   DIARY_CATEGORIES,
   LEADERSHIP_DIARY_SETUP_HINT,
@@ -80,10 +81,11 @@ function DiaryEntryCard({ entry, onEdit, onDelete, deleting, compact }) {
   );
 }
 
-export default function LeadershipDiary({ compact = false }) {
+export default function LeadershipDiary({ compact = false, storeName, storeSlug }) {
   const searchParams = useSearchParams();
-  const selectedBranch = searchParams.get("store") || DEFAULT_BRANCH;
-  const queryStore = `store=${encodeURIComponent(selectedBranch)}`;
+  const selectedBranch = storeName || searchParams.get("store") || DEFAULT_BRANCH;
+  const activeStoreSlug = storeSlug || labelToSlug(selectedBranch);
+  const diaryHref = `/${activeStoreSlug}/leadership-diary`;
 
   const [selectedDate, setSelectedDate] = useState(() => toDateKey());
   const [entries, setEntries] = useState([]);
@@ -264,7 +266,7 @@ export default function LeadershipDiary({ compact = false }) {
               </>
             ) : (
               <Link
-                href={`/leadership-diary?${queryStore}`}
+                href={diaryHref}
                 className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-[#311162] shadow-sm hover:bg-slate-50"
               >
                 Open diary
@@ -308,7 +310,7 @@ export default function LeadershipDiary({ compact = false }) {
             {compact && entries.length > feedEntries.length ? (
               <p className="text-center text-xs text-slate-500">
                 +{entries.length - feedEntries.length} more today —{" "}
-                <Link href={`/leadership-diary?${queryStore}`} className="font-semibold text-[#311162] hover:underline">
+                <Link href={diaryHref} className="font-semibold text-[#311162] hover:underline">
                   view all
                 </Link>
               </p>
@@ -319,7 +321,7 @@ export default function LeadershipDiary({ compact = false }) {
         {compact && !schemaMissing && !loading ? (
           <div className="mt-4 flex justify-center">
             <Link
-              href={`/leadership-diary?${queryStore}`}
+              href={diaryHref}
               className="text-xs font-semibold text-[#311162] hover:underline"
             >
               Manage diary entries →

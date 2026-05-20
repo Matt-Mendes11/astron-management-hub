@@ -10,6 +10,7 @@ import {
   todayStr,
 } from "../../lib/siteAssessments";
 import { supabase } from "../../lib/supabaseBrowser";
+import { labelToSlug } from "../../lib/stores";
 import { ASSESSMENT_PASS_SCORE, isAssessmentPass } from "../../lib/assessmentReport";
 import {
   ASSESSMENT_TEMPLATE_SETUP_HINT,
@@ -445,7 +446,7 @@ export default function SiteAssessmentsPanel({ storeName }) {
 
       <p className="text-center text-sm text-slate-600">
         <Link
-          href={`/operations-team-hub?store=${encodeURIComponent(storeName)}`}
+          href={`/${labelToSlug(storeName)}/operations-team-hub`}
           className="font-semibold text-[#ff6a00] hover:underline"
         >
           Check assessment history in Operations Team Hub →

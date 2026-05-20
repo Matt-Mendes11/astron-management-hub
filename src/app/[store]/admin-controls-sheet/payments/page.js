@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { createClient } from "@supabase/supabase-js";
-import { useSearchParams } from "next/navigation";
-import AppDrillBack from "../../components/drilldown/AppDrillBack";
-import { labelToSlug } from "../../lib/stores";
+import { useParams, useSearchParams } from "next/navigation";
+import AppDrillBack from "../../../../components/drilldown/AppDrillBack";
+import { storeLabelFromRoute, storeSlugFromRoute, backHrefFromReturn } from "../../../../lib/storeRoute";
 import { CalendarDays, Trash2 } from "lucide-react";
 import {
   Bar,
@@ -222,22 +222,17 @@ const MODULE_TABS = {
 };
 
 export default function PaymentsPage() {
+  const params = useParams();
   const searchParams = useSearchParams();
-  const selectedStore = searchParams.get("store") || "Hillcrest";
+  const storeSlug = storeSlugFromRoute(params?.store, searchParams);
+  const selectedStore = storeLabelFromRoute(params?.store, searchParams);
   const activeModule = searchParams.get("module") || "account-payments";
   const initialTab = MODULE_TABS[activeModule] || "invoices";
   const isAccountPaymentsView = activeModule === "account-payments";
-  const backHref = useMemo(() => {
-    const r = searchParams.get("return");
-    if (r) {
-      try {
-        return decodeURIComponent(r);
-      } catch {
-        return r;
-      }
-    }
-    return `/${labelToSlug(selectedStore)}/admin-controls-sheet`;
-  }, [searchParams, selectedStore]);
+  const backHref = useMemo(
+    () => backHrefFromReturn(searchParams, `/${storeSlug}/admin-controls-sheet`),
+    [searchParams, storeSlug]
+  );
   const today = useMemo(() => new Date(), []);
   const now = useMemo(() => new Date(), []);
 

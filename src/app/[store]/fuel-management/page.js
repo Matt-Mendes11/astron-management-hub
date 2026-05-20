@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import LegacyLinkCard from "../../../components/drilldown/LegacyLinkCard";
 import StoreDrillHeader from "../../../components/drilldown/StoreDrillHeader";
-import { isValidStoreSlug, slugToLabel, storeQueryFromLabel } from "../../../lib/stores";
+import { isValidStoreSlug, slugToLabel } from "../../../lib/stores";
 
 export const dynamic = "force-dynamic";
 
@@ -12,9 +12,8 @@ export default async function StoreFuelManagementPage({ params }) {
   const { store } = await params;
   if (!isValidStoreSlug(store)) notFound();
   const label = slugToLabel(store);
-  const q = storeQueryFromLabel(label);
   const ret = encodeURIComponent(`/${store}/fuel-management`);
-  const fuelPlannerHref = `/fuel-planner?${q}&return=${ret}`;
+  const fuelPlannerHref = `/${store}/fuel-management/fuel-plan?return=${ret}`;
 
   return (
     <div className="mx-auto max-w-5xl">

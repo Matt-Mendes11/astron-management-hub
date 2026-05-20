@@ -23,6 +23,7 @@ import {
   syncDailyChecklistLifecycle,
 } from "../../lib/dailyChecklistService";
 import { supabase } from "../../lib/supabaseBrowser";
+import { labelToSlug } from "../../lib/stores";
 
 const ORANGE_BTN =
   "inline-flex items-center justify-center gap-2 rounded-lg bg-[#ff6a00] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#e85f00] disabled:opacity-50";
@@ -408,7 +409,7 @@ export default function DailyChecklistAudit({ storeName }) {
 
       <p className="text-center text-sm text-slate-600">
         <Link
-          href={`/operations-team-hub?store=${encodeURIComponent(storeName)}`}
+          href={`/${labelToSlug(storeName)}/operations-team-hub`}
           className="font-semibold text-[#ff6a00] hover:underline"
         >
           Check document history in Operations Team Hub →

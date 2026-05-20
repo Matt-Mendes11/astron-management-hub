@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useSearchParams } from "next/navigation";
 import { Megaphone } from "lucide-react";
+import { labelToSlug } from "../lib/stores";
 import AssessmentHistoryPanel from "./audits/AssessmentHistoryPanel";
 import ChecklistDocumentHistoryPanel from "./audits/ChecklistDocumentHistoryPanel";
 
@@ -40,9 +41,10 @@ const normalizeAttachmentUrl = (rawUrl) => {
   return `https://${trimmed}`;
 };
 
-export default function OperationsTeamHub() {
+export default function OperationsTeamHub({ storeName, storeSlug }) {
   const searchParams = useSearchParams();
-  const selectedBranch = searchParams.get("store") || DEFAULT_BRANCH;
+  const selectedBranch = storeName || searchParams.get("store") || DEFAULT_BRANCH;
+  const activeStoreSlug = storeSlug || labelToSlug(selectedBranch);
   const [notices, setNotices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

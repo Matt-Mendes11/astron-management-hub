@@ -2,32 +2,27 @@
 
 import { useMemo } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { ClipboardCheck, Shield } from "lucide-react";
-import AppDrillBack from "../../components/drilldown/AppDrillBack";
-import DailyChecklistAudit from "../../components/audits/DailyChecklistAudit";
-import SiteAssessmentsPanel from "../../components/audits/SiteAssessmentsPanel";
-import { labelToSlug } from "../../lib/stores";
+import AppDrillBack from "../../../../components/drilldown/AppDrillBack";
+import DailyChecklistAudit from "../../../../components/audits/DailyChecklistAudit";
+import SiteAssessmentsPanel from "../../../../components/audits/SiteAssessmentsPanel";
+import { storeLabelFromRoute, storeSlugFromRoute, backHrefFromReturn } from "../../../../lib/storeRoute";
 
 export const dynamic = "force-dynamic";
 
 const STORES = ["Hillcrest", "Hammersdale", "Gillitts", "Cato Ridge"];
 
 export default function SiteAssessmentsPage() {
+  const params = useParams();
   const searchParams = useSearchParams();
-  const selectedStore = STORES.includes(searchParams.get("store")) ? searchParams.get("store") : "Hillcrest";
+  const storeSlug = storeSlugFromRoute(params?.store, searchParams);
+  const selectedStore = storeLabelFromRoute(params?.store, searchParams);
 
-  const backHref = useMemo(() => {
-    const r = searchParams.get("return");
-    if (r) {
-      try {
-        return decodeURIComponent(r);
-      } catch {
-        return r;
-      }
-    }
-    return `/${labelToSlug(selectedStore)}/routines-and-audits`;
-  }, [searchParams, selectedStore]);
+  const backHref = useMemo(
+    () => backHrefFromReturn(searchParams, `/${storeSlug}/routines-and-audits`),
+    [searchParams, storeSlug]
+  );
 
   return (
     <div className="space-y-8">

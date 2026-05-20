@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import AppDrillBack from "../../../components/drilldown/AppDrillBack";
-import StaffDocumentVault from "../../../components/staff/StaffDocumentVault";
-import StaffProfileFormFields from "../../../components/staff/StaffProfileFormFields";
-import { deleteStaffMember, formToStaffPayload, profileToForm, trainingStatusStyles } from "../../../lib/staff";
+import AppDrillBack from "../../../../components/drilldown/AppDrillBack";
+import StaffDocumentVault from "../../../../components/staff/StaffDocumentVault";
+import StaffProfileFormFields from "../../../../components/staff/StaffProfileFormFields";
+import { deleteStaffMember, formToStaffPayload, profileToForm, trainingStatusStyles } from "../../../../lib/staff";
+import { storeLabelFromRoute, storeSlugFromRoute, backHrefFromReturn } from "../../../../lib/storeRoute";
 import { Pencil, Printer, Trash2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -66,8 +67,8 @@ export default function StaffProfilePage() {
   const id = params?.id;
   const printRef = useRef(null);
 
-  const storeParam = searchParams.get("store");
-  const selectedStore = STORES.includes(storeParam) ? storeParam : "Hillcrest";
+  const storeSlug = storeSlugFromRoute(params?.store, searchParams);
+  const selectedStore = storeLabelFromRoute(params?.store, searchParams);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -89,8 +90,8 @@ export default function StaffProfilePage() {
         return r;
       }
     }
-    return `/staff-management?${queryStore}`;
-  }, [searchParams, queryStore]);
+    return backHrefFromReturn(searchParams, `/${storeSlug}/the-team`);
+  }, [searchParams, storeSlug]);
 
   const loadProfile = useCallback(async () => {
     if (!id) return;

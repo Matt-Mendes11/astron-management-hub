@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import LegacyLinkCard from "../../../components/drilldown/LegacyLinkCard";
 import StoreDrillHeader from "../../../components/drilldown/StoreDrillHeader";
-import { isValidStoreSlug, slugToLabel, storeQueryFromLabel } from "../../../lib/stores";
+import { isValidStoreSlug, slugToLabel } from "../../../lib/stores";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +34,7 @@ export default async function StoreAdminControlsPage({ params }) {
   const { store } = await params;
   if (!isValidStoreSlug(store)) notFound();
   const label = slugToLabel(store);
-  const q = storeQueryFromLabel(label);
   const ret = encodeURIComponent(`/${store}/admin-controls-sheet`);
-  const paymentsHref = `/payments?${q}&return=${ret}`;
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -54,7 +52,7 @@ export default async function StoreAdminControlsPage({ params }) {
             title={t.title}
             description={t.description}
             buttonLabel={t.buttonLabel}
-            href={t.module ? `${paymentsHref}&module=${t.module}` : ""}
+            href={t.module ? `/${store}/admin-controls-sheet/payments?return=${ret}&module=${t.module}` : ""}
             disabled={!t.module}
           />
         ))}

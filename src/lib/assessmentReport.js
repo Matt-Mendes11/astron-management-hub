@@ -1,4 +1,5 @@
 import { read } from "./siteAssessments";
+import { labelToSlug } from "./stores";
 
 export const ASSESSMENT_PASS_SCORE = 75;
 export const ASSESSMENT_ALERT_SCORE = 70;
@@ -74,7 +75,7 @@ export function resolveStaffProfileLink(record, staffProfiles, storeName) {
 
   if (staffId) {
     return {
-      href: `/staff-management/${staffId}?store=${encodeURIComponent(storeName)}`,
+      href: `/${labelToSlug(storeName)}/the-team/${staffId}`,
       name: name !== "—" ? name : "View staff file",
     };
   }
@@ -83,7 +84,7 @@ export function resolveStaffProfileLink(record, staffProfiles, storeName) {
     const match = staffProfiles.find((s) => s.full_name.trim().toLowerCase() === name.trim().toLowerCase());
     if (match) {
       return {
-        href: `/staff-management/${match.id}?store=${encodeURIComponent(storeName)}`,
+        href: `/${labelToSlug(storeName)}/the-team/${match.id}`,
         name: match.full_name,
       };
     }

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import LegacyLinkCard from "../../../components/drilldown/LegacyLinkCard";
 import StoreDrillHeader from "../../../components/drilldown/StoreDrillHeader";
-import { isValidStoreSlug, slugToLabel, storeQueryFromLabel } from "../../../lib/stores";
+import { isValidStoreSlug, slugToLabel } from "../../../lib/stores";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,6 @@ export default async function StoreRoutinesPage({ params }) {
   const { store } = await params;
   if (!isValidStoreSlug(store)) notFound();
   const label = slugToLabel(store);
-  const q = storeQueryFromLabel(label);
   const ret = encodeURIComponent(`/${store}/routines-and-audits`);
 
   return (
@@ -19,7 +18,7 @@ export default async function StoreRoutinesPage({ params }) {
         <LegacyLinkCard
           title="Site assessments & checklists"
           buttonLabel="Open assessments"
-          href={`/site-assessments?${q}&return=${ret}`}
+          href={`/${store}/routines-and-audits/site-assessments?return=${ret}`}
         />
         <LegacyLinkCard
           title="Daily store checksheet"

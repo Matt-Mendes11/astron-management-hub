@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   Store,
 } from "lucide-react";
-import { STORE_CONFIG, isValidStoreSlug, slugToLabel } from "../lib/stores";
+import { STORE_CONFIG, isValidStoreSlug, labelToSlug, slugToLabel } from "../lib/stores";
 
 function SidebarInner() {
   const pathname = usePathname();
@@ -34,12 +34,16 @@ function SidebarInner() {
 
   const homeActive = pathname === "/";
   const storeLinkActive = (slug) => routeRoot === slug;
+  const activeStoreSlug = labelToSlug(activeStoreLabel);
   const opsActive =
-    pathname === "/operations-team-hub" || pathname.startsWith("/operations-team-hub/");
-  const diaryActive = pathname === "/leadership-diary" || pathname.startsWith("/leadership-diary/");
+    pathname === `/${activeStoreSlug}/operations-team-hub` ||
+    pathname.startsWith(`/${activeStoreSlug}/operations-team-hub/`);
+  const diaryActive =
+    pathname === `/${activeStoreSlug}/leadership-diary` ||
+    pathname.startsWith(`/${activeStoreSlug}/leadership-diary/`);
 
-  const opsHref = `/operations-team-hub?store=${encodeURIComponent(activeStoreLabel)}`;
-  const diaryHref = `/leadership-diary?store=${encodeURIComponent(activeStoreLabel)}`;
+  const opsHref = `/${activeStoreSlug}/operations-team-hub`;
+  const diaryHref = `/${activeStoreSlug}/leadership-diary`;
 
   const navClass = (active) =>
     `flex items-center rounded-xl transition ${

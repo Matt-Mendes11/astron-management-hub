@@ -11,6 +11,7 @@ import {
 import { fetchChecklistHistory, fetchChecklistResponses } from "../../lib/dailyChecklistService";
 import { printChecklistReport } from "../../lib/checklistPrint";
 import { supabase } from "../../lib/supabaseBrowser";
+import { labelToSlug } from "../../lib/stores";
 
 export default function ChecklistDocumentHistoryPanel({ storeName }) {
   const [loading, setLoading] = useState(true);
@@ -51,7 +52,7 @@ export default function ChecklistDocumentHistoryPanel({ storeName }) {
           {storeName} · {loading ? "Loading…" : `${history.length} record${history.length === 1 ? "" : "s"}`}
           {" · "}
           <Link
-            href={`/site-assessments?store=${encodeURIComponent(storeName)}`}
+            href={`/${labelToSlug(storeName)}/routines-and-audits/site-assessments`}
             className="font-semibold text-[#ff6a00] hover:underline"
           >
             Fill in daily checklist

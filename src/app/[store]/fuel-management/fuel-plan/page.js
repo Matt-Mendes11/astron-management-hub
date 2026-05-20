@@ -5,9 +5,9 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { createClient } from "@supabase/supabase-js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { useRouter, useSearchParams } from "next/navigation";
-import AppDrillBack from "../../components/drilldown/AppDrillBack";
-import { labelToSlug } from "../../lib/stores";
+import { useParams, useSearchParams } from "next/navigation";
+import AppDrillBack from "../../../../components/drilldown/AppDrillBack";
+import { storeLabelFromRoute, storeSlugFromRoute, backHrefFromReturn } from "../../../../lib/storeRoute";
 import { PolarAngleAxis, RadialBar, RadialBarChart } from "recharts";
 export const dynamic = 'force-dynamic';
 const supabaseUrl =
@@ -495,19 +495,10 @@ function TankGauge({ label, value, capacity, highColor, compact = false }) {
 }
 
 function FuelPlannerPageInner() {
-  const router = useRouter();
+  const params = useParams();
   const searchParams = useSearchParams();
-  const returnUrl = searchParams.get("return");
-  const selectedStoreParam = searchParams.get("store");
-  const selectedStore = STORE_OPTIONS.includes(selectedStoreParam ?? "")
-    ? selectedStoreParam
-    : "Hillcrest";
-
-  useEffect(() => {
-    if (returnUrl) return;
-    const slug = labelToSlug(selectedStore);
-    router.replace(`/${slug}/fuel-management`);
-  }, [returnUrl, router, selectedStore]);
+  const storeSlug = storeSlugFromRoute(params?.store, searchParams);
+  const selectedStore = storeLabelFromRoute(params?.store, searchParams);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(monthKeyFor());
@@ -1268,24 +1259,10 @@ function FuelPlannerPageInner() {
     return () => clearTimeout(timeout);
   }, [toast]);
 
-  const backHref = useMemo(() => {
-    if (returnUrl) {
-      try {
-        return decodeURIComponent(returnUrl);
-      } catch {
-        return returnUrl;
-      }
-    }
-    return `/${labelToSlug(selectedStore)}/fuel-management`;
-  }, [returnUrl, selectedStore]);
-
-  if (!returnUrl) {
-    return (
-      <div className="grid min-h-[40vh] place-items-center p-8 text-center text-sm text-slate-600">
-        Redirecting to Fuel Management…
-      </div>
-    );
-  }
+  const backHref = useMemo(
+    () => backHrefFromReturn(searchParams, `/${storeSlug}/fuel-management`),
+    [searchParams, storeSlug]
+  );
 
   if (loading)
     return (

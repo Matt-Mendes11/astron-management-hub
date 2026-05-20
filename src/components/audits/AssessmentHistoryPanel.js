@@ -5,6 +5,7 @@ import Link from "next/link";
 import { History } from "lucide-react";
 import { assessmentSubjectDisplay, read, todayStr } from "../../lib/siteAssessments";
 import { supabase } from "../../lib/supabaseBrowser";
+import { labelToSlug } from "../../lib/stores";
 import { isAssessmentLowScore, resolveStaffProfileLink } from "../../lib/assessmentReport";
 import AssessmentReportModal from "./AssessmentReportModal";
 
@@ -60,7 +61,7 @@ export default function AssessmentHistoryPanel({ storeName }) {
             {storeName} · {loading ? "Loading…" : `${assessments.length} audit${assessments.length === 1 ? "" : "s"}`}
             {" · "}
             <Link
-              href={`/site-assessments?store=${encodeURIComponent(storeName)}`}
+              href={`/${labelToSlug(storeName)}/routines-and-audits/site-assessments`}
               className="font-semibold text-[#ff6a00] hover:underline"
             >
               Run new assessment
