@@ -8,6 +8,7 @@ import autoTable from "jspdf-autotable";
 import { useParams, useSearchParams } from "next/navigation";
 import AppDrillBack from "../../../../components/drilldown/AppDrillBack";
 import { storeLabelFromRoute, storeSlugFromRoute, backHrefFromReturn } from "../../../../lib/storeRoute";
+import { useAuthProfile } from "../../../../lib/authProfile";
 import { PolarAngleAxis, RadialBar, RadialBarChart } from "recharts";
 export const dynamic = 'force-dynamic';
 const supabaseUrl =
@@ -499,6 +500,7 @@ function FuelPlannerPageInner() {
   const searchParams = useSearchParams();
   const storeSlug = storeSlugFromRoute(params?.store, searchParams);
   const selectedStore = storeLabelFromRoute(params?.store, searchParams);
+  const { isManager } = useAuthProfile();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(monthKeyFor());
@@ -1172,80 +1174,32 @@ function FuelPlannerPageInner() {
     const row = rowOverride ?? plannerRows.find((entry) => entry.date === date);
     if (!row) return;
 
-    const { data: existingMetricRow } = await supabase
+    const payload = {
+      store_name: selectedStore,
+      reading_date: date,
+      forecast_dsl: klInputToLiters(row.forecast_dsl),
+      forecast_ulp: klInputToLiters(row.forecast_ulp),
+      actual_dsl: klInputToLiters(row.actual_dsl),
+      actual_ulp: klInputToLiters(row.actual_ulp),
+      ordered_by: row.ordered_by?.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: upsertError } = await supabase
       .from("daily_fuel_metrics")
-      .select("*, ordered_by")
-      .eq("store_name", selectedStore)
-      .eq("reading_date", date)
-      .maybeSingle();
+      .upsert(payload, { onConflict: "store_name,reading_date" });
 
-    const payloadVariants = buildDailyMetricPayloadVariants(
-      selectedStore,
-      date,
-      row,
-      existingMetricRow
-    );
-    let finalError = null;
-    let saved = false;
-
-    for (const payload of payloadVariants) {
-      let saveError = null;
-      let savedData = null;
-      const { data: upsertData, error: upsertError } = await supabase
-        .from("daily_fuel_metrics")
-        .upsert(payload, { onConflict: "store_name,reading_date" })
-        .select("id, reading_date, ordered_by")
-        .maybeSingle();
-
-      if (upsertError) {
-        const { data: existing, error: lookupError } = await supabase
-          .from("daily_fuel_metrics")
-          .select("id, ordered_by")
-          .eq("store_name", selectedStore)
-          .eq("reading_date", date)
-          .maybeSingle();
-
-        if (lookupError) {
-          saveError = lookupError;
-        } else if (existing?.id) {
-          const { data: updateData, error: updateError } = await supabase
-            .from("daily_fuel_metrics")
-            .update(payload)
-            .eq("id", existing.id)
-            .select("id, reading_date, ordered_by")
-            .maybeSingle();
-          savedData = updateData;
-          saveError = updateError;
-        } else {
-          const { data: insertData, error: insertError } = await supabase
-            .from("daily_fuel_metrics")
-            .insert(payload)
-            .select("id, reading_date, ordered_by")
-            .maybeSingle();
-          savedData = insertData;
-          saveError = insertError;
-        }
-      } else {
-        savedData = upsertData;
-      }
-
-      if (!upsertError && !saveError) {
-        console.log("Saved data:", savedData || payload);
-        saved = true;
-        break;
-      }
-
-      console.error("Save error:", saveError || upsertError);
-      finalError = saveError || upsertError;
-    }
-
-    if (!saved && finalError) {
-      console.error("Save error:", finalError);
+    if (upsertError) {
       const errorMessage = getErrorMessage(
-        finalError,
+        upsertError,
         "Unknown error while saving daily fuel metrics."
       );
-      console.error("Daily fuel metrics save error (raw):", finalError);
+      console.error("Daily fuel metrics save error:", {
+        message: upsertError.message,
+        details: upsertError.details,
+        hint: upsertError.hint,
+        code: upsertError.code,
+      });
       alert(`Failed to save daily fuel metrics: ${errorMessage}`);
       setToast({ type: "error", message: errorMessage });
     }
@@ -1390,12 +1344,14 @@ function FuelPlannerPageInner() {
           >
             Orders
           </Tabs.Trigger>
-          <Tabs.Trigger
-            value="pricing"
-            className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 data-[state=active]:bg-[#ff6e00] data-[state=active]:text-white"
-          >
-            Pricing
-          </Tabs.Trigger>
+          {isManager ? (
+            <Tabs.Trigger
+              value="pricing"
+              className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 data-[state=active]:bg-[#ff6e00] data-[state=active]:text-white"
+            >
+              Pricing
+            </Tabs.Trigger>
+          ) : null}
         </Tabs.List>
 
         <Tabs.Content value="monthly" className="space-y-4">
@@ -1673,6 +1629,7 @@ function FuelPlannerPageInner() {
           </div>
         </Tabs.Content>
 
+        {isManager ? (
         <Tabs.Content value="pricing">
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-end sm:justify-between">
@@ -1821,6 +1778,7 @@ function FuelPlannerPageInner() {
             </p>
           </div>
         </Tabs.Content>
+        ) : null}
       </Tabs.Root>
 
       {isCriticalSettingsOpen && (

@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { usePathname } from "next/navigation";
+import { isValidStoreSlug, slugToLabel } from "../lib/stores";
 
 function formatTopDate(d = new Date()) {
   const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -13,26 +15,36 @@ function formatTopDate(d = new Date()) {
 }
 
 export default function AppHeader() {
-  const [dateLine, setDateLine] = useState({ label: "", iso: "" });
-
-  useEffect(() => {
+  const pathname = usePathname();
+  const dateLine = useMemo(() => {
     const d = new Date();
-    setDateLine({ label: formatTopDate(d), iso: d.toISOString().slice(0, 10) });
+    return { label: formatTopDate(d), iso: d.toISOString().slice(0, 10) };
   }, []);
 
+  if (pathname === "/login") return null;
+
+  const pathSlug = pathname.match(/^\/([^/]+)/)?.[1] || "";
+  const storeLabel = isValidStoreSlug(pathSlug) ? slugToLabel(pathSlug) : "All Stores";
+
   return (
-    <header className="flex h-[3.75rem] shrink-0 items-center border-b border-slate-200/90 bg-white px-6 sm:px-10 lg:px-12">
-      <div className="flex w-full min-w-0 items-center justify-between gap-8">
-        <h1 className="min-w-0 text-base font-semibold tracking-tight text-slate-800 sm:text-lg">
+    <header className="flex h-[4rem] shrink-0 items-center border-b border-slate-200/90 bg-white px-6 sm:px-10 lg:px-12">
+      <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="min-w-0 text-base font-bold tracking-tight text-slate-900 sm:text-lg">
           Regional Terminal Portal
         </h1>
-        <time
-          className="shrink-0 tabular-nums text-right text-[13px] font-medium tracking-[0.02em] text-slate-500 sm:text-sm"
-          dateTime={dateLine.iso || undefined}
-          suppressHydrationWarning
-        >
-          {dateLine.label || "\u00a0"}
-        </time>
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-[13px] font-semibold text-slate-700">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Store</span>
+            <span className="text-slate-900">{storeLabel}</span>
+          </div>
+          <time
+            className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-slate-50 px-3 text-[13px] font-semibold tabular-nums tracking-[0.02em] text-slate-600"
+            dateTime={dateLine.iso || undefined}
+            suppressHydrationWarning
+          >
+            {dateLine.label || "\u00a0"}
+          </time>
+        </div>
       </div>
     </header>
   );

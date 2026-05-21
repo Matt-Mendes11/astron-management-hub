@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { BookOpen, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { labelToSlug } from "../lib/stores";
+import { useAuthProfile } from "../lib/authProfile";
 import {
   DIARY_CATEGORIES,
   LEADERSHIP_DIARY_SETUP_HINT,
@@ -86,6 +87,7 @@ export default function LeadershipDiary({ compact = false, storeName, storeSlug 
   const selectedBranch = storeName || searchParams.get("store") || DEFAULT_BRANCH;
   const activeStoreSlug = storeSlug || labelToSlug(selectedBranch);
   const diaryHref = `/${activeStoreSlug}/leadership-diary`;
+  const { isManager } = useAuthProfile();
 
   const [selectedDate, setSelectedDate] = useState(() => toDateKey());
   const [entries, setEntries] = useState([]);
@@ -303,7 +305,7 @@ export default function LeadershipDiary({ compact = false, storeName, storeSlug 
                 entry={entry}
                 compact={compact}
                 onEdit={compact ? undefined : openEdit}
-                onDelete={compact ? undefined : deleteEntry}
+                onDelete={compact || !isManager ? undefined : deleteEntry}
                 deleting={deletingId === entry.id}
               />
             ))}

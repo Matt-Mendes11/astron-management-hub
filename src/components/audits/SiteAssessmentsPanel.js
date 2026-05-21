@@ -12,6 +12,7 @@ import {
 import { supabase } from "../../lib/supabaseBrowser";
 import { labelToSlug } from "../../lib/stores";
 import { ASSESSMENT_PASS_SCORE, isAssessmentPass } from "../../lib/assessmentReport";
+import { useAuthProfile } from "../../lib/authProfile";
 import {
   ASSESSMENT_TEMPLATE_SETUP_HINT,
   fetchAllAssessmentTemplates,
@@ -23,6 +24,7 @@ const ORANGE_BTN =
   "inline-flex items-center justify-center gap-2 rounded-lg bg-[#ff6a00] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#e85f00] disabled:opacity-50";
 
 export default function SiteAssessmentsPanel({ storeName }) {
+  const { isManager } = useAuthProfile();
   const [loading, setLoading] = useState(true);
   const [assessments, setAssessments] = useState([]);
   const [staffProfiles, setStaffProfiles] = useState([]);
@@ -279,14 +281,16 @@ export default function SiteAssessmentsPanel({ storeName }) {
                       {index + 1}
                     </span>
                     <p className="min-w-0 flex-1 text-sm leading-snug text-slate-800">{t.question_text}</p>
-                    <button
-                      type="button"
-                      onClick={() => deactivateQuestion(t.id)}
-                      className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                      aria-label="Delete question"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {isManager ? (
+                      <button
+                        type="button"
+                        onClick={() => deactivateQuestion(t.id)}
+                        className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        aria-label="Delete question"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    ) : null}
                   </div>
                 ))
               )}

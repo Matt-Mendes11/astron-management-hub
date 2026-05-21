@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import AppDrillBack from "../../../../components/drilldown/AppDrillBack";
 import StaffDocumentVault from "../../../../components/staff/StaffDocumentVault";
@@ -9,6 +11,7 @@ import StaffProfileFormFields from "../../../../components/staff/StaffProfileFor
 import { deleteStaffMember, formToStaffPayload, profileToForm, trainingStatusStyles } from "../../../../lib/staff";
 import { storeLabelFromRoute, storeSlugFromRoute, backHrefFromReturn } from "../../../../lib/storeRoute";
 import { Pencil, Printer, Trash2 } from "lucide-react";
+import { useAuthProfile } from "../../../../lib/authProfile";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +21,8 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const STORES = ["Hillcrest", "Hammersdale", "Gillitts", "Cato Ridge"];
+const BRAND_PURPLE = [49, 17, 98];
+const BRAND_ORANGE = [255, 110, 0];
 
 const read = (row, keys, fallback = "") => {
   for (const key of keys) {
@@ -31,6 +36,36 @@ const formatDate = (value) => {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleDateString("en-ZA");
 };
+
+const safeFilePart = (value) =>
+  String(value || "employee-file")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+function drawPdfHeader(doc, { storeName, title }) {
+  const margin = 14;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const generated = new Date().toLocaleDateString("en-ZA", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(...BRAND_PURPLE);
+  doc.text(`ASTRON Energy - ${storeName}`, margin, 14);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(82, 82, 91);
+  doc.text(title, margin, 20);
+  doc.text(generated, pageWidth - margin, 14, { align: "right" });
+  doc.setDrawColor(...BRAND_ORANGE);
+  doc.setLineWidth(0.55);
+  doc.line(margin, 24, pageWidth - margin, 24);
+  doc.setTextColor(15, 23, 42);
+}
 
 function initialsFromName(name) {
   if (!name || typeof name !== "string") return "?";
@@ -69,11 +104,13 @@ export default function StaffProfilePage() {
 
   const storeSlug = storeSlugFromRoute(params?.store, searchParams);
   const selectedStore = storeLabelFromRoute(params?.store, searchParams);
+  const { isManager } = useAuthProfile();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [profile, setProfile] = useState(null);
   const [assessments, setAssessments] = useState([]);
+  const [documents, setDocuments] = useState([]);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState(() => profileToForm(null));
   const [saving, setSaving] = useState(false);
@@ -108,6 +145,7 @@ export default function StaffProfilePage() {
       setError(pErr.message);
       setProfile(null);
       setAssessments([]);
+      setDocuments([]);
       setLoading(false);
       return;
     }
@@ -116,6 +154,7 @@ export default function StaffProfilePage() {
       setError("Staff profile not found.");
       setProfile(null);
       setAssessments([]);
+      setDocuments([]);
       setLoading(false);
       return;
     }
@@ -124,6 +163,7 @@ export default function StaffProfilePage() {
       setError("This profile belongs to another store. Switch store in the header to view it.");
       setProfile(null);
       setAssessments([]);
+      setDocuments([]);
       setLoading(false);
       return;
     }
@@ -144,11 +184,27 @@ export default function StaffProfilePage() {
       setAssessments(assessRows || []);
     }
 
+    const { data: docRows, error: dErr } = await supabase
+      .from("staff_documents")
+      .select("id, file_name, uploaded_at")
+      .eq("staff_id", id)
+      .order("uploaded_at", { ascending: false });
+
+    if (dErr) {
+      console.error("Staff profile documents load:", dErr);
+      setDocuments([]);
+    } else {
+      setDocuments(docRows || []);
+    }
+
     setLoading(false);
   }, [id, selectedStore]);
 
   useEffect(() => {
-    loadProfile();
+    const timeoutId = window.setTimeout(() => {
+      loadProfile();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [loadProfile]);
 
   const openEdit = () => {
@@ -176,8 +232,88 @@ export default function StaffProfilePage() {
     await loadProfile();
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrintEmployeeFile = () => {
+    if (!profile) return;
+
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    drawPdfHeader(doc, { storeName: selectedStore, title: "Confidential employee file" });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42);
+    doc.text(profile.full_name || "Employee Profile", 14, 36);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(82, 82, 91);
+    doc.text(`${profile.position || "Role not set"} • ${selectedStore}`, 14, 43);
+
+    autoTable(doc, {
+      startY: 52,
+      head: [["Employee Information", ""]],
+      body: [
+        ["Employee ID", profile.employee_id || "—"],
+        ["ID Number", profile.id_number || "—"],
+        ["Contact", profile.contact_number || "—"],
+        ["Date of Birth", formatDate(profile.date_of_birth)],
+        ["Joined", formatDate(profile.joined_date)],
+        ["Training Status", trainingStatus],
+        ["Emergency Contact", profile.emergency_contact_name || "—"],
+        ["Emergency Phone", profile.emergency_contact_phone || "—"],
+      ],
+      theme: "grid",
+      styles: { fontSize: 8.5, cellPadding: 2, lineColor: [226, 232, 240], lineWidth: 0.1 },
+      headStyles: { fillColor: BRAND_PURPLE, textColor: 255, fontStyle: "bold" },
+      columnStyles: { 0: { fontStyle: "bold", cellWidth: 48 }, 1: { cellWidth: 132 } },
+      margin: { left: 14, right: 14 },
+    });
+
+    const docY = (doc.lastAutoTable?.finalY || 100) + 9;
+    autoTable(doc, {
+      startY: docY,
+      head: [["Document Vault Status", "Uploaded"]],
+      body:
+        documents.length > 0
+          ? documents.slice(0, 6).map((item) => [item.file_name || "Document", formatDate(item.uploaded_at)])
+          : [["No documents uploaded", "—"]],
+      theme: "grid",
+      styles: { fontSize: 8.5, cellPadding: 2, lineColor: [226, 232, 240], lineWidth: 0.1 },
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold" },
+      margin: { left: 14, right: 14 },
+    });
+
+    const assessmentY = (doc.lastAutoTable?.finalY || docY) + 9;
+    autoTable(doc, {
+      startY: assessmentY,
+      head: [["Recent Assessment", "Assessor", "Score", "Outcome"]],
+      body:
+        assessments.length > 0
+          ? assessments.slice(0, 5).map((row) => {
+              const score = Number(read(row, ["score"], 0));
+              return [
+                `${formatDate(read(row, ["created_at"], ""))} • ${read(row, ["assessment_type"], "Assessment")}`,
+                read(row, ["assessor_name", "assessor"], "—"),
+                `${score}%`,
+                score >= 80 ? "Pass" : "Fail",
+              ];
+            })
+          : [["No assessments on file", "—", "—", "—"]],
+      theme: "grid",
+      styles: { fontSize: 8.5, cellPadding: 2, lineColor: [226, 232, 240], lineWidth: 0.1 },
+      headStyles: { fillColor: BRAND_PURPLE, textColor: 255, fontStyle: "bold" },
+      columnStyles: { 2: { halign: "right", fontStyle: "bold" } },
+      margin: { left: 14, right: 14 },
+    });
+
+    const footerY = 285;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(
+      `Astron Energy - ${selectedStore} • Generated ${new Date().toLocaleString("en-ZA")}`,
+      14,
+      footerY
+    );
+    doc.save(`${safeFilePart(profile.full_name)}-employee-file.pdf`);
   };
 
   const removeProfile = async () => {
@@ -242,21 +378,23 @@ export default function StaffProfilePage() {
               </button>
               <button
                 type="button"
-                onClick={handlePrint}
+                onClick={handlePrintEmployeeFile}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
               >
                 <Printer className="h-4 w-4" strokeWidth={2} />
-                Print employee record
+                Print Employee File
               </button>
-              <button
-                type="button"
-                onClick={removeProfile}
-                disabled={deleting}
-                className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-600 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Trash2 className="h-4 w-4" strokeWidth={2} />
-                {deleting ? "Deleting…" : "Delete profile"}
-              </button>
+              {isManager ? (
+                <button
+                  type="button"
+                  onClick={removeProfile}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-600 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Trash2 className="h-4 w-4" strokeWidth={2} />
+                  {deleting ? "Deleting…" : "Delete profile"}
+                </button>
+              ) : null}
             </>
           ) : null}
         </div>

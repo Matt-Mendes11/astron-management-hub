@@ -36,7 +36,7 @@ export default function RootLayout({ children }) {
             </Suspense>
 
             {/* Page content slot */}
-            <main className="flex-1 overflow-auto p-6">{children}</main>
+            <main className="flex-1 overflow-auto p-6 lg:p-8">{children}</main>
           </div>
         </div>
       </body>

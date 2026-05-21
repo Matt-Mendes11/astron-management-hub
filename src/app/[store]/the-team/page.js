@@ -18,6 +18,7 @@ import {
   deleteStaffMember,
 } from "../../../lib/staff";
 import { Search, Trash2, UserPlus } from "lucide-react";
+import { useAuthProfile } from "../../../lib/authProfile";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,7 @@ export default function StaffManagementPage() {
   const searchParams = useSearchParams();
   const storeSlug = storeSlugFromRoute(params?.store, searchParams);
   const selectedStore = storeLabelFromRoute(params?.store, searchParams);
+  const { isManager } = useAuthProfile();
 
   const backHref = useMemo(
     () => backHrefFromReturn(searchParams, `/${storeSlug}`),
@@ -354,15 +356,17 @@ export default function StaffManagementPage() {
                         >
                           View file
                         </Link>
-                        <button
-                          type="button"
-                          onClick={() => removeMember(row)}
-                          disabled={deletingId === row.id}
-                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
-                          {deletingId === row.id ? "Deleting…" : "Delete"}
-                        </button>
+                        {isManager ? (
+                          <button
+                            type="button"
+                            onClick={() => removeMember(row)}
+                            disabled={deletingId === row.id}
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-600 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" strokeWidth={2} />
+                            {deletingId === row.id ? "Deleting…" : "Delete"}
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

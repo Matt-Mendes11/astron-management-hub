@@ -12,15 +12,24 @@ import {
   ShieldCheck,
   Store,
 } from "lucide-react";
+import { isManagerProfile, signOut, useAuthProfile } from "../lib/authProfile";
 import { STORE_CONFIG, isValidStoreSlug, labelToSlug, slugToLabel } from "../lib/stores";
+
+const iconStrokeWidth = 1.6;
 
 function SidebarInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
+  const { profile } = useAuthProfile();
+
+  if (pathname === "/login") return null;
 
   const pathSlugMatch = pathname.match(/^\/(hillcrest|hammersdale|gillitts|cato-ridge)(?:\/|$)/);
   const pathSlug = pathSlugMatch?.[1];
+  const permittedStores = isManagerProfile(profile)
+    ? STORE_CONFIG
+    : STORE_CONFIG.filter((store) => store.label === (profile?.storeName || "Hillcrest"));
   const activeStoreLabel =
     pathSlug && isValidStoreSlug(pathSlug)
       ? slugToLabel(pathSlug)
@@ -67,7 +76,11 @@ function SidebarInner() {
           className="absolute right-3 top-3 rounded-lg bg-white/10 p-1.5 text-white/85 transition hover:bg-white/20 hover:text-white"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {collapsed ? <Menu className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          {collapsed ? (
+            <Menu className="h-4 w-4" strokeWidth={iconStrokeWidth} />
+          ) : (
+            <ChevronLeft className="h-4 w-4" strokeWidth={iconStrokeWidth} />
+          )}
         </button>
         <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
           <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[#ff6a00] text-2xl font-black text-white shadow-sm">
@@ -93,7 +106,7 @@ function SidebarInner() {
             {homeActive ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[#ff6a00]" /> : null}
             <Link href="/" title={collapsed ? "Home" : ""} className={navClass(homeActive)} aria-current={homeActive ? "page" : undefined}>
               <span className="inline-flex h-6 w-6 items-center justify-center">
-                <Home size={22} strokeWidth={1.85} />
+                <Home size={22} strokeWidth={iconStrokeWidth} />
               </span>
               {!collapsed ? <span className="text-[13px] font-medium tracking-wide">Home</span> : null}
             </Link>
@@ -111,7 +124,7 @@ function SidebarInner() {
           {!collapsed ? "Stores" : "—"}
         </p>
         <ul className="space-y-1">
-          {STORE_CONFIG.map(({ slug, label }) => {
+          {permittedStores.map(({ slug, label }) => {
             const active = storeLinkActive(slug);
             return (
               <li key={slug} className="group relative">
@@ -123,7 +136,7 @@ function SidebarInner() {
                   aria-current={active ? "true" : undefined}
                 >
                   <span className="inline-flex h-6 w-6 items-center justify-center">
-                    <Store size={22} strokeWidth={1.85} />
+                    <Store size={22} strokeWidth={iconStrokeWidth} />
                   </span>
                   {!collapsed ? <span className="text-[13px] font-medium tracking-wide">{label}</span> : null}
                 </Link>
@@ -152,7 +165,7 @@ function SidebarInner() {
               aria-current={opsActive ? "page" : undefined}
             >
               <span className="inline-flex h-6 w-6 items-center justify-center">
-                <ShieldCheck size={22} strokeWidth={1.85} />
+                <ShieldCheck size={22} strokeWidth={iconStrokeWidth} />
               </span>
               {!collapsed ? (
                 <span className="text-[13px] font-medium tracking-wide">Operations Team Hub</span>
@@ -173,7 +186,7 @@ function SidebarInner() {
               aria-current={diaryActive ? "page" : undefined}
             >
               <span className="inline-flex h-6 w-6 items-center justify-center">
-                <BookOpen size={22} strokeWidth={1.85} />
+                <BookOpen size={22} strokeWidth={iconStrokeWidth} />
               </span>
               {!collapsed ? <span className="text-[13px] font-medium tracking-wide">Leadership Diary</span> : null}
             </Link>
@@ -193,7 +206,7 @@ function SidebarInner() {
               isHillcrest ? "border-[#ff6a00]/50 bg-[#ff6a00]/15 text-[#ff6a00]" : "border-white/15 bg-white/5 text-white/80"
             }`}
           >
-            <Store className="h-5 w-5" strokeWidth={2} aria-hidden />
+            <Store className="h-5 w-5" strokeWidth={iconStrokeWidth} aria-hidden />
           </div>
         </div>
       ) : (
@@ -209,16 +222,16 @@ function SidebarInner() {
                 isHillcrest ? "text-[#ffb86c]" : "text-white"
               }`}
             >
-              <Store className="h-4 w-4 shrink-0 text-[#ff6a00]" strokeWidth={2} aria-hidden />
+              <Store className="h-4 w-4 shrink-0 text-[#ff6a00]" strokeWidth={iconStrokeWidth} aria-hidden />
               {activeStoreLabel}
             </p>
             {isHillcrest ? (
               <p className="mt-2 text-[11px] leading-snug text-white/70">
-                Hillcrest is the default hub site. Use Stores to switch branch context.
+                Hillcrest is the default hub site. Managers can switch branch context.
               </p>
             ) : (
               <p className="mt-2 text-[11px] leading-snug text-white/60">
-                Branch follows the URL path or tool links (e.g. fuel planner).
+                Branch access follows your assigned profile store.
               </p>
             )}
           </div>
@@ -228,31 +241,33 @@ function SidebarInner() {
       <div className="mt-auto border-t border-white/10 p-3">
         <div className="rounded-2xl bg-white/10 p-3 backdrop-blur-sm">
           <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-[#ff6a00] text-xs font-bold text-white">
-              M
+            <div className="grid h-9 w-9 place-items-center rounded-full bg-[#ff6a00] text-xs font-bold uppercase text-white">
+              {(profile?.fullName || profile?.email || "U").slice(0, 1)}
             </div>
             {!collapsed ? (
               <div>
-                <p className="text-sm font-semibold text-white">M. Mendes</p>
-                <p className="text-xs text-white/70">Regional Manager</p>
+                <p className="text-sm font-semibold text-white">{profile?.fullName || "Signed in user"}</p>
+                <p className="text-xs capitalize text-white/70">{profile?.role || "staff"}</p>
               </div>
             ) : null}
           </div>
           {!collapsed ? (
             <button
               type="button"
+              onClick={signOut}
               className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white/90 transition hover:bg-white/20"
             >
-              <LogOut className="h-3.5 w-3.5" strokeWidth={2} />
+              <LogOut className="h-3.5 w-3.5" strokeWidth={iconStrokeWidth} />
               Sign Out
             </button>
           ) : (
             <button
               type="button"
               title="Sign Out"
+              onClick={signOut}
               className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-white/20 bg-white/10 px-2 py-2 text-white/90 transition hover:bg-white/20"
             >
-              <LogOut className="h-3.5 w-3.5" strokeWidth={2} />
+              <LogOut className="h-3.5 w-3.5" strokeWidth={iconStrokeWidth} />
             </button>
           )}
         </div>

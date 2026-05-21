@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -24,6 +24,7 @@ import {
 } from "../../lib/dailyChecklistService";
 import { supabase } from "../../lib/supabaseBrowser";
 import { labelToSlug } from "../../lib/stores";
+import { useAuthProfile } from "../../lib/authProfile";
 
 const ORANGE_BTN =
   "inline-flex items-center justify-center gap-2 rounded-lg bg-[#ff6a00] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#e85f00] disabled:opacity-50";
@@ -64,6 +65,7 @@ function StatCell({ label, value }) {
 }
 
 export default function DailyChecklistAudit({ storeName }) {
+  const { isManager } = useAuthProfile();
   const [loading, setLoading] = useState(true);
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [error, setError] = useState("");
@@ -365,14 +367,16 @@ export default function DailyChecklistAudit({ storeName }) {
                     </span>
                     <p className="mt-1.5 text-sm leading-snug text-slate-800">{t.question_text}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => deactivateQuestion(t.id)}
-                    className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                    aria-label="Delete question"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {isManager ? (
+                    <button
+                      type="button"
+                      onClick={() => deactivateQuestion(t.id)}
+                      className="shrink-0 rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      aria-label="Delete question"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  ) : null}
                 </div>
               ))
             )}

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { createClient } from "@supabase/supabase-js";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { useParams, useSearchParams } from "next/navigation";
 import AppDrillBack from "../../../../components/drilldown/AppDrillBack";
 import { storeLabelFromRoute, storeSlugFromRoute, backHrefFromReturn } from "../../../../lib/storeRoute";
@@ -43,6 +45,8 @@ const MONTHS = [
 const CHART_ORANGE = "#ff6e00";
 const CHART_PURPLE = "#3c008b";
 const PIE_COLORS = ["#ff6e00", "#3c008b", "#1d4ed8", "#059669", "#9333ea", "#ea580c", "#0f766e"];
+const BRAND_PURPLE = [49, 17, 98];
+const BRAND_ORANGE = [255, 110, 0];
 
 const emptyInvoiceForm = {
   supplierName: "",
@@ -215,6 +219,56 @@ const buildDeductionRunningState = (rows) => {
   return { dueById, paymentById, balanceByName };
 };
 
+const formatCurrency = (value) =>
+  `R ${toNum(value).toLocaleString("en-ZA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+const safeFilePart = (value) =>
+  String(value || "report")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+function drawPdfHeader(doc, { storeName, title }) {
+  const margin = 14;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const generated = new Date().toLocaleDateString("en-ZA", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(...BRAND_PURPLE);
+  doc.text(`ASTRON Energy - ${storeName}`, margin, 14);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(82, 82, 91);
+  doc.text(title, margin, 20);
+  doc.text(generated, pageWidth - margin, 14, { align: "right" });
+  doc.setDrawColor(...BRAND_ORANGE);
+  doc.setLineWidth(0.55);
+  doc.line(margin, 24, pageWidth - margin, 24);
+  doc.setTextColor(15, 23, 42);
+}
+
+function addPageNumbers(doc) {
+  const pageCount = doc.internal.getNumberOfPages();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  for (let page = 1; page <= pageCount; page += 1) {
+    doc.setPage(page);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(`Page ${page} of ${pageCount}`, pageWidth - 14, pageHeight - 8, { align: "right" });
+  }
+}
+
 const MODULE_TABS = {
   "account-payments": "invoices",
   "payment-plan": "customer-accounts",
@@ -365,7 +419,10 @@ export default function PaymentsPage() {
   }, [selectedStore, currentMonthRange.end, currentMonthRange.start, currentMonthMondays, period]);
 
   useEffect(() => {
-    loadPayments();
+    const timeoutId = window.setTimeout(() => {
+      loadPayments();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [loadPayments]);
 
   const persistInvoice = async (record, id = "") => {
@@ -708,6 +765,54 @@ export default function PaymentsPage() {
     setCustomerPayments((prev) => prev.filter((row) => row.id !== id));
   };
 
+  const downloadCustomerSchedulePdf = () => {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const title = `Customer accounts payment schedule • ${periodLabel(year, month)}`;
+    drawPdfHeader(doc, { storeName: selectedStore, title });
+
+    const totalPaid = customerPayments.reduce((sum, row) => sum + toNum(row.amountPaid), 0);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Monthly Ledger", 14, 34);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(82, 82, 91);
+    doc.text(`Total paid: ${formatCurrency(totalPaid)}`, 14, 40);
+
+    autoTable(doc, {
+      startY: 47,
+      head: [["Account Name", "Amount Paid", "Date Paid", "Recorded By", "Schedule Date"]],
+      body:
+        customerPayments.length > 0
+          ? customerPayments.map((row) => [
+              row.accountName || "—",
+              row.amountPaid ? formatCurrency(row.amountPaid) : "—",
+              formatDate(row.datePaid),
+              row.recordedBy || "—",
+              formatDate(row.scheduleDate),
+            ])
+          : [["No customer account payments recorded.", "—", "—", "—", "—"]],
+      margin: { top: 30, left: 14, right: 14, bottom: 14 },
+      theme: "grid",
+      headStyles: { fillColor: BRAND_PURPLE, textColor: 255, fontStyle: "bold" },
+      styles: {
+        fontSize: 9,
+        cellPadding: 2.4,
+        lineColor: [226, 232, 240],
+        lineWidth: 0.1,
+        valign: "middle",
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
+      willDrawPage: (data) => {
+        if (data.pageNumber > 1) drawPdfHeader(data.doc, { storeName: selectedStore, title });
+      },
+    });
+
+    addPageNumbers(doc);
+    doc.save(`${safeFilePart(selectedStore)}-${period}-customer-account-schedule.pdf`);
+  };
+
   const deductionPayload = (row) => ({
     store_name: selectedStore,
     week_starting: row.weekStarting,
@@ -858,6 +963,90 @@ export default function PaymentsPage() {
       return;
     }
     setStaffDeductions((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const downloadDeductionsPdf = () => {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const title = `Weekly deductions report • ${periodLabel(year, month)}`;
+    drawPdfHeader(doc, { storeName: selectedStore, title });
+
+    let y = 34;
+    if (deductionGroups.length === 0) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.text(`No deductions recorded for ${periodLabel(year, month)}.`, 14, y);
+    }
+
+    deductionGroups.forEach((group, groupIndex) => {
+      if (groupIndex > 0 && y > 210) {
+        doc.addPage();
+        drawPdfHeader(doc, { storeName: selectedStore, title });
+        y = 34;
+      }
+
+      doc.setFillColor(...BRAND_PURPLE);
+      doc.roundedRect(14, y, 182, 9, 1.5, 1.5, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text(`WK STARTING - ${formatDate(group.weekStarting)}`, 18, y + 6);
+      doc.setTextColor(15, 23, 42);
+
+      const rows = group.rows.length
+        ? group.rows
+        : [{ id: "blank", staffName: "", dueAmount: "", paymentAmount: "", isPaid: false, comments: "" }];
+
+      autoTable(doc, {
+        startY: y + 12,
+        head: [["Name", "Due Amount", "Payment", "Paid", "Comments"]],
+        body: rows.map((row) => {
+          const dueMeta = deductionDueById.get(row.id);
+          const paymentMeta = deductionPaymentById.get(row.id);
+          const dueValue = dueMeta?.text ?? row.dueAmount;
+          const paymentValue = paymentMeta?.text ?? row.paymentAmount;
+          return [
+            row.staffName || " ",
+            dueValue ? formatCurrency(dueValue) : " ",
+            paymentValue ? formatCurrency(paymentValue) : " ",
+            row.isPaid ? "Yes" : "No",
+            row.comments || " ",
+          ];
+        }),
+        margin: { top: 30, left: 14, right: 14, bottom: 24 },
+        theme: "grid",
+        headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold" },
+        styles: {
+          fontSize: 8.5,
+          cellPadding: 2,
+          lineColor: [203, 213, 225],
+          lineWidth: 0.15,
+        },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: {
+          1: { halign: "right" },
+          2: { halign: "right" },
+          3: { halign: "center" },
+        },
+        willDrawPage: (data) => {
+          if (data.pageNumber > 1) drawPdfHeader(data.doc, { storeName: selectedStore, title });
+        },
+      });
+
+      y = (doc.lastAutoTable?.finalY || y + 32) + 10;
+      doc.setDrawColor(148, 163, 184);
+      doc.setLineWidth(0.25);
+      doc.line(14, y, 82, y);
+      doc.line(112, y, 196, y);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(82, 82, 91);
+      doc.text("Employee signature", 14, y + 4);
+      doc.text("Manager signature", 112, y + 4);
+      y += 14;
+    });
+
+    addPageNumbers(doc);
+    doc.save(`${safeFilePart(selectedStore)}-${period}-weekly-deductions.pdf`);
   };
 
   const onPrevMonth = () => {
@@ -1238,13 +1427,22 @@ export default function PaymentsPage() {
               <h3 className="text-base font-extrabold text-slate-950">
                 Monthly Customer Accounts Payment Schedule for {periodLabel(year, month)}
               </h3>
-              <button
-                type="button"
-                onClick={addCustomerPaymentRow}
-                className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-bold text-white shadow-lg shadow-orange-200/60 transition hover:brightness-95"
-              >
-                + Add row
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={downloadCustomerSchedulePdf}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#ff6e00]/50 hover:text-[#ff6e00]"
+                >
+                  Download Monthly Schedule
+                </button>
+                <button
+                  type="button"
+                  onClick={addCustomerPaymentRow}
+                  className="rounded-xl bg-[#ff6e00] px-4 py-2 text-sm font-bold text-white shadow-lg shadow-orange-200/60 transition hover:brightness-95"
+                >
+                  + Add row
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto bg-white">
               <table className="w-full min-w-[900px] border-collapse text-sm">
@@ -1379,9 +1577,18 @@ export default function PaymentsPage() {
                   {selectedStore} deductions for {periodLabel(year, month)}
                 </h3>
               </div>
-              <p className="max-w-md text-right text-xs leading-relaxed text-slate-500">
-                Week blocks are generated automatically for every Monday in {periodLabel(year, month)}.
-              </p>
+              <div className="flex flex-col items-start gap-3 sm:items-end">
+                <button
+                  type="button"
+                  onClick={downloadDeductionsPdf}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:border-[#ff6e00]/50 hover:text-[#ff6e00]"
+                >
+                  Download Weekly Report
+                </button>
+                <p className="max-w-md text-left text-xs leading-relaxed text-slate-500 sm:text-right">
+                  Week blocks are generated automatically for every Monday in {periodLabel(year, month)}.
+                </p>
+              </div>
             </div>
 
             <div className="space-y-6 bg-white p-4">
