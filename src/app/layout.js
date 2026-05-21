@@ -1,8 +1,6 @@
-import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import AppHeader from "../components/AppHeader";
-import Sidebar from "../components/Sidebar";
+import AuthLayoutShell from "../components/AuthLayoutShell";
 export const dynamic = 'force-dynamic';
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,19 +24,7 @@ export default function RootLayout({ children }) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-screen bg-slate-50 text-slate-900">
-        <div className="flex min-h-screen">
-          <Sidebar />
-
-          {/* Main area */}
-          <div className="flex min-w-0 flex-1 flex-col">
-            <Suspense fallback={<div className="h-[4.25rem] shrink-0 border-b border-slate-200 bg-white" aria-hidden />}>
-              <AppHeader />
-            </Suspense>
-
-            {/* Page content slot */}
-            <main className="flex-1 overflow-auto p-6 lg:p-8">{children}</main>
-          </div>
-        </div>
+        <AuthLayoutShell>{children}</AuthLayoutShell>
       </body>
     </html>
   );

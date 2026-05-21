@@ -21,9 +21,18 @@ function SidebarInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
-  const { profile } = useAuthProfile();
+  const { profile, loading } = useAuthProfile();
 
   if (pathname === "/login") return null;
+  if (loading) {
+    return (
+      <aside
+        className={`relative flex shrink-0 flex-col border-r border-white/10 bg-gradient-to-b from-[#311162] via-[#4a1a94] to-[#2a0f55] text-white shadow-xl backdrop-blur-md transition-all duration-300 ${
+          collapsed ? "w-20" : "w-64"
+        }`}
+      />
+    );
+  }
 
   const pathSlugMatch = pathname.match(/^\/(hillcrest|hammersdale|gillitts|cato-ridge)(?:\/|$)/);
   const pathSlug = pathSlugMatch?.[1];
