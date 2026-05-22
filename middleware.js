@@ -63,10 +63,6 @@ export async function middleware(request) {
     return NextResponse.redirect(new URL(`/${firstSegment}/operations-team-hub`, request.url));
   }
 
-  if (role !== "manager" && pathname.startsWith(`/${firstSegment}/admin-controls-sheet`)) {
-    return NextResponse.redirect(new URL(`/${firstSegment}`, request.url));
-  }
-
   if (role !== "manager" && assignedStore !== requestedStore) {
     return NextResponse.redirect(new URL(`/${labelToSlug(assignedStore)}`, request.url));
   }
