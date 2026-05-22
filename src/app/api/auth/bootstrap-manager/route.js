@@ -6,7 +6,10 @@ const setupCode = process.env.MANAGER_SETUP_CODE || "";
 export async function POST(request) {
   if (!setupCode) {
     return NextResponse.json(
-      { error: "Manager setup is not enabled. Add MANAGER_SETUP_CODE to .env.local." },
+      {
+        error:
+          "Manager setup is not enabled. Add MANAGER_SETUP_CODE to .env.local (local) or Vercel Environment Variables (production).",
+      },
       { status: 403 }
     );
   }

@@ -56,8 +56,9 @@ export async function createOrUpdateAccessUser({
   if (!supabaseAdmin) {
     return {
       ok: false,
-      status: 403,
-      error: "User creation requires SUPABASE_SERVICE_ROLE_KEY in .env.local.",
+      status: 503,
+      error:
+        "User creation is not configured on the server. Add SUPABASE_SERVICE_ROLE_KEY to .env.local for local dev, or to your Vercel project Environment Variables (Settings → Environment Variables), then redeploy.",
     };
   }
 
